@@ -4,6 +4,10 @@
 #include <mutex>
 #include <ctime>
 
+void per() {
+	print("Function!");
+}
+
 int main(int argc, char** argv) {
 	CN_Server serv = CN_Server();
 	CN_Client cli = CN_Client();

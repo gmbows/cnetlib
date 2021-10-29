@@ -8,6 +8,7 @@
 
 using asio::ip::tcp;
 
+typedef void(*void_fn)(void);
 typedef void*(*threadptr)(void*);
 typedef void*(*real)(void);
 
@@ -61,8 +62,8 @@ template <typename CallerType,typename Function>
 struct CN_Thread {
 	pthread_t handler;
 	ThreadPackage<CallerType,Function> *p;
-	static void* execute(void *p) {
-		ThreadPackage<CallerType,Function> *tp = static_cast<ThreadPackage<CallerType,Function>*>(p);
+	static void* execute(void *package) {
+		ThreadPackage<CallerType,Function> *tp = static_cast<ThreadPackage<CallerType,Function>*>(package);
 		std::invoke(tp->fn,tp->caller);
 		return nullptr;
 	}
