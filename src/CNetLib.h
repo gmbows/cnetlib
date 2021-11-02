@@ -4,49 +4,78 @@
 #include <mutex>
 #include <pthread.h>
 #include <functional>
+#include <queue>
 #include "Utility.h"
 
 using asio::ip::tcp;
 
-typedef void(*void_fn)(void);
-typedef void*(*threadptr)(void*);
-typedef void*(*real)(void);
-
 struct CN_Connection {
 	//Generic connection object
 	bool active;
-	std::shared_ptr<tcp::socket> sock;
+	unsigned short id;
+	tcp::socket *sock;
+	
+	std::queue<std::string> messages;
+	
+	void handle();
 
-	CN_Connection() {
+	CN_Connection(tcp::socket *_sock) {
 		print("Created new connection object");
+		this->sock = _sock;
+		this->active = false;
+	}
+	~CN_Connection() {
+		delete this->sock;
+		print("Deleted connection");
+	}
+};
+
+struct CN_Message {
+	CN_Connection *owner;
+	std::string content;
+	CN_Message(CN_Connection *__owner, std::string __content): owner(__owner), content(__content) {
+		
 	}
 };
 
 struct CN_Server {
 	//Generic server (incoming connection) object
+	
+	unsigned short port;
+	unsigned int numConnections;
 
-	std::shared_ptr<tcp::acceptor> acceptor;
+	tcp::acceptor *acceptor;
+
+
+	std::queue<CN_Message*> messages;
+	std::queue<CN_Connection*> connections;
 
 	void accept();
+	std::string get_msg();
 
-	CN_Server() {
-		this->acceptor = std::make_shared<tcp::acceptor>(tcp::acceptor(io_context, tcp::endpoint(tcp::v4(), 5555)));
+	CN_Server(unsigned short _port): port(_port) {
+		this->acceptor = new tcp::acceptor(io_context, tcp::endpoint(tcp::v4(), _port));
 		print("Created new server object");
 	}
+	//DTOR
 };
 
 struct CN_Client {
-	//Generic client (outgoing connection) object
 	
-	std::shared_ptr<tcp::resolver> resolver;
+	tcp::resolver *resolver;
 	
 	void connect(std::string);
 	
 	CN_Client() {
-		this->resolver = std::make_shared<tcp::resolver>(tcp::resolver(io_context));
+		this->resolver = new tcp::resolver(io_context);
 		print("Created new client object");
 	}
+	//DTOR
 };
+
+//======================
+//		CN_THREAD
+//======================
 
 template <typename CallerType,typename Function>
 struct ThreadPackage {
@@ -60,7 +89,7 @@ struct ThreadPackage {
 
 template <typename CallerType,typename Function>
 struct CN_Thread {
-	pthread_t handler;
+	pthread_t handle;
 	ThreadPackage<CallerType,Function> *p;
 	static void* execute(void *package) {
 		ThreadPackage<CallerType,Function> *tp = static_cast<ThreadPackage<CallerType,Function>*>(package);
@@ -68,10 +97,13 @@ struct CN_Thread {
 		return nullptr;
 	}
 	void run() {
-		pthread_create(&handler,NULL,&this->execute,static_cast<void*>(this->p));
+		pthread_create(&handle,NULL,&this->execute,static_cast<void*>(this->p));
 	}
 	CN_Thread(CallerType&& _ca, Function&& _fn) {
 		this->p = new ThreadPackage<CallerType,Function>(_ca,_fn);
 		this->run();
+	}
+	~CN_Thread() {
+		delete this->p;
 	}
 };

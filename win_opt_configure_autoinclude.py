@@ -1,12 +1,12 @@
 import os
 
-execname = "gui_test.exe"
+execname = "main.exe"
 
 basedir = os.path.dirname(os.path.realpath(__file__))+"/"
 
 makefile = open(basedir+"makefile","w+")
 
-filesources = ["src/","src/twt/","./"]
+filesources = ["src/"]
 
 def getDeps(filename):
 	try:
@@ -46,14 +46,16 @@ makestr = ""
 
 binlist = ["bin"+src[src.rfind('/'):]+".o" for src in srcs]
 
-makestr += execname+": "+" ".join(binlist)+"\n\tg++  "+" ".join(binlist)+" -lpthread -I /include/SDL2 -L /lib -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -fpermissive -O3 -o "+execname+"\n\n"
+libs = "-std=c++17 -DASIO_STANDALONE  -lpthread -I/usr/include/SDL2 -D_REENTRANT"
+
+makestr += execname+": "+" ".join(binlist)+"\n\tg++  "+" ".join(binlist)+" "+libs+" -lpthread -I /include/SDL2 -L /lib -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -fpermissive -O3 -o "+execname+"\n\n"
 
 for src in srcs:
 	head=""
 	if src in heads:
 		head = src+".h"
 	deps = getDeps(src)
-	makestr += "bin/{1}.o: {0}.cpp {2} \n\tg++  -c {0}.cpp -lpthread -fpermissive -O3 -I /include/SDL2 -L /lib -lmingw32  -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -o bin/{1}.o\n\n".format(src,src[src.rfind('/')+1:],head + deps)
+	makestr += "bin/{1}.o: {0}.cpp {2} \n\tg++  -std=c++17 -c {0}.cpp -lpthread -fpermissive -O3 -I /include/SDL2 -L /lib -lmingw32  -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -o bin/{1}.o\n\n".format(src,src[src.rfind('/')+1:],head + deps)
 	
 makefile.write(makestr)
 makefile.close()
