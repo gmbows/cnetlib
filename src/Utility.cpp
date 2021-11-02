@@ -39,6 +39,10 @@ int getch() {
 }
 #endif
 
+std::string get_address(asio::ip::tcp::socket *sock) {
+    return sock->remote_endpoint().address().to_string();
+}	
+
 std::stringstream statement;
 
 bool intersects(SDL_Rect r1,SDL_Rect r2) {

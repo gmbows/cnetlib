@@ -18,12 +18,16 @@ void CN_Connection::handle() {
 
         vdata = array_to_vector(data,TWT_BUFFER_SIZE);
 		
-		print(this->id,": ",data," (",len," bytes)");
+		this->handle_msg(new CN_Message(this,data));
 
         clear_buffer(data,TWT_BUFFER_SIZE);
     }
-	print(error.message());
+	print("Connection ",this->id," closed (",error.message(),")");
 	delete this;
+}
+
+void CN_Connection::handle_msg(CN_Message *msg) {
+	this->messageHandler->handle(msg);
 }
 
 std::string CN_Server::get_msg() {
@@ -36,17 +40,18 @@ std::string CN_Server::get_msg() {
 void CN_Server::accept() {
 	 tcp::socket *sock;
 
-	 print("Listening");
+	 print("Server listening on port "+std::to_string(this->port));
 
     while(true) {
         try {
             sock = new tcp::socket(io_context);
             this->acceptor->accept(*sock);
-			print("Got connection");
 			//Create new thread to import messages from this connection
 			CN_Connection *c = new CN_Connection(sock);
 			c->id = ++this->numConnections;
+			c->messageHandler = this->messageHandler_Default;
 			CN_Thread(&*c,&CN_Connection::handle);
+			this->connections.push(c);
         } catch (const std::exception &e) {
             print(e.what());
             return;
@@ -54,7 +59,12 @@ void CN_Server::accept() {
     }
 }
 
-void CN_Client::connect(std::string ip) {
+void CN_Client::send(std::string msg) {
+	asio::error_code error;
+	size_t written = asio::write(*this->connection->sock, asio::buffer(msg,TWT_BUFFER_SIZE), error);
+}
+
+bool CN_Client::connect(std::string ip) {
 	tcp::socket *sock;
 
     try {
@@ -63,12 +73,15 @@ void CN_Client::connect(std::string ip) {
         asio::connect(*sock, endpoints);
     } catch(const std::exception &e) {
         print(e.what());
-        return;
+        return false;
     }
-	
 	
 	asio::error_code error;
 	size_t written = asio::write(*sock, asio::buffer("Greetings from client",100), error);
+	
+	this->connection = new CN_Connection(sock);
+	this->connection->id = 0;
 
-    return;
+	this->connected = true;
+    return true;
 }

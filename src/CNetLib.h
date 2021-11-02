@@ -9,33 +9,63 @@
 
 using asio::ip::tcp;
 
+struct CN_MessageHandler;
+struct CN_Message;
+
 struct CN_Connection {
 	//Generic connection object
 	bool active;
 	unsigned short id;
 	tcp::socket *sock;
 	
+	std::string address;
+	
 	std::queue<std::string> messages;
 	
+	CN_MessageHandler *messageHandler;
+	
 	void handle();
+	void handle_msg(CN_Message*);
 
-	CN_Connection(tcp::socket *_sock) {
+	CN_Connection(tcp::socket *_sock): id(0) {
 		print("Created new connection object");
 		this->sock = _sock;
+		this->address = get_address(sock);
 		this->active = false;
 	}
 	~CN_Connection() {
 		delete this->sock;
-		print("Deleted connection");
 	}
 };
 
 struct CN_Message {
 	CN_Connection *owner;
 	std::string content;
+	size_t len;
 	CN_Message(CN_Connection *__owner, std::string __content): owner(__owner), content(__content) {
+		this->len = __content.size();
+	}
+};
+
+
+// struct CN_Thread;
+
+struct CN_MessageHandler {
+	
+	void handle(CN_Message *msg) {
+		this->handler(msg);
+		delete msg;
+		msg = nullptr;
+	}
+	
+	//Awaits new messages, passes to user-defined handling function
+	std::function<void(CN_Message*)> handler;
+	
+	CN_MessageHandler(std::function<void(CN_Message*)> __h): handler(__h) {
 		
 	}
+	
+	CN_MessageHandler() {}
 };
 
 struct CN_Server {
@@ -45,6 +75,8 @@ struct CN_Server {
 	unsigned int numConnections;
 
 	tcp::acceptor *acceptor;
+	
+	CN_MessageHandler *messageHandler_Default;
 
 
 	std::queue<CN_Message*> messages;
@@ -53,7 +85,8 @@ struct CN_Server {
 	void accept();
 	std::string get_msg();
 
-	CN_Server(unsigned short _port): port(_port) {
+	CN_Server(unsigned short _port): port(_port), numConnections(0) {
+		this->messageHandler_Default = new CN_MessageHandler();
 		this->acceptor = new tcp::acceptor(io_context, tcp::endpoint(tcp::v4(), _port));
 		print("Created new server object");
 	}
@@ -64,9 +97,13 @@ struct CN_Client {
 	
 	tcp::resolver *resolver;
 	
-	void connect(std::string);
+	bool connect(std::string);
+	void send(std::string);
 	
-	CN_Client() {
+	bool connected;
+	CN_Connection *connection;
+	
+	CN_Client(): connected(false) {
 		this->resolver = new tcp::resolver(io_context);
 		print("Created new client object");
 	}
@@ -103,7 +140,5 @@ struct CN_Thread {
 		this->p = new ThreadPackage<CallerType,Function>(_ca,_fn);
 		this->run();
 	}
-	~CN_Thread() {
-		delete this->p;
-	}
+	CN_Thread() {}
 };

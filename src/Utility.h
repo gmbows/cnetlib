@@ -9,12 +9,15 @@
 #include <map>
 #include <pthread.h>
 #include "Common.h"
+#include <asio.hpp>
 
 extern std::string command,cursor;
 
 extern std::stringstream statement;
 
 bool intersects(SDL_Rect,SDL_Rect);
+
+std::string get_address(asio::ip::tcp::socket *sock);
 
 template <typename T>
 int vmax(std::vector<T> v) {
