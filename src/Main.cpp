@@ -10,8 +10,12 @@
 //	-length based messaging
 
 int main(int argc, char** argv) {
+	
+	pthread_mutex_init(&printLock,NULL);
+	
 	CN_Server serv = CN_Server(5555);
 	CN_Client cli = CN_Client();
+	
 
 	//default message handler
 	// serv.messageHandler_Default->handler = [](CN_Message *msg) -> void {

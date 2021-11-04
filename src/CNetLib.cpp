@@ -19,8 +19,6 @@ void CN_Connection::handle() {
 	
     asio::error_code error;
 	
-	print("Handling connection");
-	
     while(!error) {
         size_t len = this->sock->read_some(asio::buffer(data,TWT_BUFFER_SIZE), error);
 
@@ -36,30 +34,12 @@ void CN_Connection::handle() {
 }
 
 void CN_Connection::handle_data(std::string data) {
-	int i=0;
-	if(!this->reading()) {
-		for(i;i<data.size();i++) {
-			if(this->reader.read(data[i])) {
-				//We read a valid packet header
-				this->reader.reading = true;
-				i++;
-				this->reader.bytesRemaining = std::stoi(data.substr(i,16));
-				i+=16;
-				break;
-			}
-		}
-	}
-	if(this->reading()) {
-		//we are reading a message
-		for(i;i<data.size();i++) {
-			if(this->reader.read(data[i])) {
-				//We have read the full message
-				CN_Message *msg = new CN_Message(data);
-				msg->owner = this;
-				this->handle_msg(msg);
-				this->reader.reset();
-				// data.erase(0,i);
-			}
+	for(auto &c : data) {
+		if(this->reader.read(c)) {
+			CN_Message *msg = new CN_Message(this,this->reader.data);
+			msg->owner = this;
+			this->handle_msg(msg);
+			this->reader.reset();
 		}
 	}
 }

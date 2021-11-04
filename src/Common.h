@@ -28,6 +28,12 @@ enum DataType {
 	TWT_SET_TITLE,
 };
 
+enum CN_NetState {
+	CN_READ_HEADER,
+	CN_READ_BYTES,
+	CN_READ_DATA,
+};
+
 extern std::string packet_header;
 
 

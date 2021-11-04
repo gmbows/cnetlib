@@ -16,27 +16,54 @@ struct CN_NetReader {
 	size_t bytesRemaining;
 	bool reading;
 	std::string data;
-	std::string data_inv;
+	CN_NetState state;
+	
+	std::string bytecount_str;
 	unsigned short packet_index = 0;
 	void reset() {
 		this->reading = false;
 		this->data = "";
-		this->data_inv = "";
+		this->bytecount_str = "";
 		this->bytesRemaining = 0;
+		this->packet_index = 0;
+		this->state = CN_READ_HEADER;
 	}
 	bool read(char c) {
-		if(!this->reading) {
-			if(packet_header[this->packet_index] == c) {
-				packet_index++;
-			} else {
-				packet_index = 0;
-			}
-			return packet_index == packet_header.size();
+		switch(this->state) {
+			case CN_READ_HEADER:
+				if(packet_header[this->packet_index] == c) {
+					packet_index++;
+				} else {
+					packet_index = 0;
+				}
+				if(packet_index == packet_header.size()) this->state = CN_READ_BYTES;
+				return false;
+			case CN_READ_BYTES:
+				this->bytecount_str += c;
+				if(this->bytecount_str.size() == 16) {
+					try {
+						this->bytesRemaining = std::stoi(this->bytecount_str);
+					} catch(const std::exception &e) {
+						print("Error converting bytecount to int (",this->bytecount_str,")");
+						this->reset();
+						return false;
+					}
+					this->state = CN_READ_DATA;
+				}
+				return false;
+			case CN_READ_DATA:
+				this->data += c;
+				if(--bytesRemaining == 0) {
+					this->state = CN_READ_HEADER;
+					return true;
+				}
+				return false;
+			default:
+				print("Invalid net state");
+				return false;
 		}
-		this->data += c;
-		return --bytesRemaining == 0;
 	}
-	CN_NetReader(size_t brem): bytesRemaining(brem), reading(false) {
+	CN_NetReader(size_t brem): bytesRemaining(brem), reading(false), state(CN_READ_HEADER) {
 		this->data = "";
 	}
 	CN_NetReader(){}
@@ -80,7 +107,6 @@ struct CN_Message {
 	void deserialize(std::string s) {
 		s.erase(0,packet_header.size());
 		this->len = std::stoi(s.substr(0,16));
-		print("Got message of length ",this->len);
 		s.erase(0,16);
 		this->content = s;
 	}
