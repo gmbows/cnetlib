@@ -7,7 +7,6 @@
 
 //todo
 //	-pool threads
-//	-length based messaging
 
 int main(int argc, char** argv) {
 	
@@ -15,7 +14,6 @@ int main(int argc, char** argv) {
 	
 	CN_Server serv = CN_Server(5555);
 	CN_Client cli = CN_Client();
-	
 
 	//default message handler
 	// serv.messageHandler_Default->handler = [](CN_Message *msg) -> void {

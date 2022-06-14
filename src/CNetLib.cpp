@@ -1,4 +1,5 @@
 #include "CNetLib.h"
+#include "Common.h"
 
 #include <string>
 

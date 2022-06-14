@@ -6,6 +6,7 @@
 #include <functional>
 #include <queue>
 #include "Utility.h"
+#include "Common.h"
 
 using asio::ip::tcp;
 
@@ -156,9 +157,14 @@ struct CN_Server {
 	void accept();
 	void start();
 	std::string get_msg();
+	
+	void set_default_message_handler(std::function<void(CN_Message *msg)> __handler) {
+		if(this->messageHandler_Default == nullptr) delete this->messageHandler_Default;
+		this->messageHandler_Default = new CN_MessageHandler(__handler);
+	}
 
 	CN_Server(unsigned short _port): port(_port), numConnections(0), active(false) {
-		this->messageHandler_Default = new CN_MessageHandler([](CN_Message* msg) {
+		this->set_default_message_handler([](CN_Message* msg) {
 			print("(MessageHandler ",msg->owner->id,")["+msg->owner->address+"]: ",msg->content," (",msg->len," bytes)");
 		});
 		this->acceptor = new tcp::acceptor(io_context, tcp::endpoint(tcp::v4(), _port));
@@ -185,13 +191,18 @@ struct CN_Client {
 	bool connect(std::string);
 	size_t send(std::string);
 	
-	CN_MessageHandler *messageHandler_Default;
+	CN_MessageHandler *messageHandler_Default = nullptr;
 	
 	bool inline connected() {return this->connection->active;};
 	CN_Connection *connection;
 	
+	void set_default_message_handler(std::function<void(CN_Message *msg)> __handler) {
+		if(this->messageHandler_Default == nullptr) delete this->messageHandler_Default;
+		this->messageHandler_Default = new CN_MessageHandler(__handler);
+	}
+	
 	CN_Client() {
-		this->messageHandler_Default = new CN_MessageHandler([](CN_Message* msg) {
+		this->set_default_message_handler([](CN_Message* msg) {
 			print("(MessageHandler ",msg->owner->id,")["+msg->owner->address+"]: ",msg->content," (",msg->len," bytes)");
 		});
 		this->resolver = new tcp::resolver(io_context);
