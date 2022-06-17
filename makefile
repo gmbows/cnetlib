@@ -1,15 +1,15 @@
-main.exe: bin/CNetLib.o bin/Common.o bin/Main.o bin/Utility.o
-	g++  bin/CNetLib.o bin/Common.o bin/Main.o bin/Utility.o -std=c++17 -DASIO_STANDALONE  -lpthread -I/usr/include/SDL2 -D_REENTRANT -lpthread -I /include/SDL2 -L /lib -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -fpermissive -O3 -o main.exe
+main.exe: bin/cnetlib.o bin/cnet_utility.o bin/main.o bin/serializer.o
+	C:\Qt\Tools\mingw1120_64\bin\g++  bin/cnetlib.o bin/cnet_utility.o bin/main.o bin/serializer.o -DASIO_STANDALONE  -lpthread -D_REENTRANT -lstdc++fs -std=c++17 -L /lib -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -lmingw32 -fpermissive -O3 -o main.exe
 
-bin/CNetLib.o: src/CNetLib.cpp src/CNetLib.h  src/Utility.h src/Utility.cpp  
-	g++  -std=c++17 -c src/CNetLib.cpp -lpthread -fpermissive -O3 -I /include/SDL2 -L /lib -lmingw32  -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -o bin/CNetLib.o
+bin/cnetlib.o: src/cnetlib.cpp src/cnetlib.h  
+	C:\Qt\Tools\mingw1120_64\bin\g++  -c src/cnetlib.cpp -lpthread -fpermissive -O3 -L /lib -lmingw32  -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -o bin/cnetlib.o
 
-bin/Common.o: src/Common.cpp src/Common.h  
-	g++  -std=c++17 -c src/Common.cpp -lpthread -fpermissive -O3 -I /include/SDL2 -L /lib -lmingw32  -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -o bin/Common.o
+bin/cnet_utility.o: src/cnet_utility.cpp src/cnet_utility.h  
+	C:\Qt\Tools\mingw1120_64\bin\g++  -c src/cnet_utility.cpp -lpthread -fpermissive -O3 -L /lib -lmingw32  -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -o bin/cnet_utility.o
 
-bin/Main.o: src/Main.cpp  
-	g++  -std=c++17 -c src/Main.cpp -lpthread -fpermissive -O3 -I /include/SDL2 -L /lib -lmingw32  -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -o bin/Main.o
+bin/main.o: src/main.cpp  
+	C:\Qt\Tools\mingw1120_64\bin\g++  -c src/main.cpp -lpthread -fpermissive -O3 -L /lib -lmingw32  -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -o bin/main.o
 
-bin/Utility.o: src/Utility.cpp src/Utility.h  
-	g++  -std=c++17 -c src/Utility.cpp -lpthread -fpermissive -O3 -I /include/SDL2 -L /lib -lmingw32  -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -o bin/Utility.o
+bin/serializer.o: src/serializer.cpp src/serializer.h  src/cnet_utility.h src/cnet_utility.cpp  
+	C:\Qt\Tools\mingw1120_64\bin\g++  -c src/serializer.cpp -lpthread -fpermissive -O3 -L /lib -lmingw32  -D_WIN32_WINNT=0x0601 -lws2_32 -lwsock32 -o bin/serializer.o
 
