@@ -8,7 +8,13 @@ int main() {
 	serv.start();
 	
 	serv.packet_handler = [](CN_Packet *np) {
-		print("Got message: ",np->content," (",np->len," bytes)");
+		switch(np->type) {
+			case CN_DataType::CN_TEXT:
+				print("Got message: ",np->content," (",np->len," bytes)");
+				break;
+			default:
+				print("Unhandled data type","(",np->len," bytes)");
+		}
 	};
 	
 	CN_Connection *new_connection = cli.connect("127.0.0.1");
