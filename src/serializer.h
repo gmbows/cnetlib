@@ -9,9 +9,9 @@
 
 class serializer {
 public:
-	unsigned long long int* byte_lengths;
-	int byte_length_set;
-	int byte_length_get;
+//	unsigned long long int* byte_lengths;
+//	int byte_length_set;
+//	int byte_length_get;
 
 	unsigned char* data;
 	unsigned char* data_end;
@@ -29,24 +29,31 @@ public:
 
 	size_t true_size() {
 		size_t offset = (size_t)(this->data_set_ptr-this->data);
-		// print("True size: ",offset);
+//		 print("True size: ",offset);
 		return offset;
 	}
 
 	void realloc_data() {
-		unsigned int new_data_size = 2*data_size;
-		unsigned char* new_data = (unsigned char*)malloc(new_data_size*sizeof(unsigned char));
-		memset(new_data,'\0',new_data_size*sizeof(unsigned char));
-		memcpy(new_data,this->data,this->data_size*sizeof(unsigned char));
+		unsigned int new_data_size = 2*this->data_size;
 		unsigned int data_set_offset = this->data_set_ptr - this->data;
 		unsigned int data_get_offset = this->data_get_ptr - this->data;
-
+		this->data = (unsigned char*)realloc(this->data,new_data_size);
 		this->data_size = new_data_size;
+//		print("Data size expanded to ",new_data_size);
+//		return;
+//		unsigned int new_data_size = 2*data_size;
+//		unsigned char* new_data = (unsigned char*)malloc(new_data_size*sizeof(unsigned char));
+//		memset(new_data,'\0',new_data_size*sizeof(unsigned char));
+//		memcpy(new_data,this->data,this->data_size*sizeof(unsigned char));
+//		unsigned int data_set_offset = this->data_set_ptr - this->data;
+//		unsigned int data_get_offset = this->data_get_ptr - this->data;
 
-		print("Data size expanded to ",new_data_size);
+//		this->data_size = new_data_size;
 
-		free(this->data);
-		this->data = new_data;
+//		print("Data size expanded to ",new_data_size);
+
+//		free(this->data);
+//		this->data = new_data;
 
 		this->data_set_ptr = this->data+data_set_offset;
 		this->data_get_ptr = this->data+data_get_offset;
@@ -60,29 +67,29 @@ public:
 
 	int get_int() {
 		int *i = (int*)data_get_ptr;
-		if(this->byte_lengths[byte_length_get] != sizeof(int)) {
+//		if(this->byte_lengths[byte_length_get] != sizeof(int)) {
 //			print("Invalid fetch (",sizeof(int),", expected ",this->byte_lengths[byte_length_get],")");
 //			return -1;
-		}
+//		}
 		data_get_ptr += sizeof(int);
 		if(this->data_get_ptr > this->data_end) {
 			print("Error: Accessing beyond end of serialized data");
 		}
-		byte_length_get++;
+//		byte_length_get++;
 		return *i;
 	}
 
 	int get_long() {
 		size_t *i = (size_t*)data_get_ptr;
-		if(this->byte_lengths[byte_length_get] != sizeof(size_t)) {
+//		if(this->byte_lengths[byte_length_get] != sizeof(size_t)) {
 //			print("Invalid fetch (",sizeof(int),", expected ",this->byte_lengths[byte_length_get],")");
 //			return -1;
-		}
+//		}
 		data_get_ptr += sizeof(size_t);
 		if(this->data_get_ptr > this->data_end) {
 //			print("Error get_long(): Accessing beyond end of serialized data");
 		}
-		byte_length_get++;
+//		byte_length_get++;
 		return *i;
 	}
 
@@ -117,11 +124,11 @@ public:
 	}
 
 	int get_data(unsigned char* data, int len) {
-		memset(data,'\0',len);
+//		memset(data,'N',len);
 		int i;
 		for(i=0;i<len;i++) {
 			data[i] = this->get_char();
-			if(this->data_get_ptr >= this->data_end) {
+			if(this->data_get_ptr == this->data_end) {
 //				print("get_data(): Reached end of data");
 				return i+1;
 			}
@@ -136,15 +143,17 @@ public:
 	void add_int(int i) {
 		memcpy(this->data_set_ptr,&i,sizeof(int));
 		data_set_ptr += sizeof(i);
+		if(data_set_ptr >= this->data_end) this->realloc_data();
 	}
 
 	void add_long(size_t i) {
 		memcpy(this->data_set_ptr,&i,sizeof(size_t));
 		data_set_ptr += sizeof(i);
+		if(data_set_ptr >= this->data_end) this->realloc_data();
 	}
 
 	void add_char(char c) {
-		this->data_set_ptr[0] = c;
+		*this->data_set_ptr = c;
 		data_set_ptr += sizeof(c);
 		if(data_set_ptr >= this->data_end) {
 			this->realloc_data();
@@ -195,7 +204,7 @@ public:
 
 	void initialize(size_t size) {
 		this->data = (unsigned char*)malloc(size);
-		memset(this->data,'\0',size);
+//		memset(this->data,'\0',size);
 		this->data_set_ptr = data;
 		this->data_get_ptr = data;
 		this->data_end = data+size;
