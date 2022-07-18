@@ -6,7 +6,6 @@ CNetLib is a high-level, multithreaded networking library for handling basic TCP
 * Bug fixes
 
 ## Usage
-Provided in the library is a `main.cpp` file that performs a test of basic functionality
 ```cpp
 CN_Server serv;         //Server object
 CN_Client cli;          //Client object
