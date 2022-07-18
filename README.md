@@ -1,10 +1,9 @@
 # CNetLib
-CNetLib is a high-level, multithreaded networking library for handling basic client/server based TCP connections 
+CNetLib is a high-level, multithreaded networking library for handling basic TCP messaging 
 
-## Changes in v2
-* Serialization
-* File streaming
-* Fixes and optimizations
+## Changes in v3
+* Improved performance
+* Bug fixes
 
 ## Usage
 Provided in the library is a `main.cpp` file that performs a test of basic functionality
@@ -12,27 +11,28 @@ Provided in the library is a `main.cpp` file that performs a test of basic funct
 CN_Server serv;         //Server object
 CN_Client cli;          //Client object
 
-serv.initialize(5555);  //Initialize network objects on port 5555
-cli.initialize(5555);   //
+CN::Client cli = CN::Client(5555);  //Initialize network objects on port 5555
+CN::Server serv = CN::Server(5555);   //
 
-serv.start();           //Begin listening for connections (asynchronous)
+serv.start_listener();          //Begin listening for connections (asynchronous)
 	
 //Set server behavior
-serv.packet_handler = [](CN_Packet *np) {
-  switch(np->type) {
-    case CN_DataType::CN_TEXT:
-      print("Got message: ",np->content," (",np->len," bytes)");  //Print text and packet size in bytes
+serv.set_message_handler([](CN::Message *msg) {
+  switch(msg->type) {
+    case (int)CN::DataType::CN_TEXT:
+      //Print text and packet size in bytes
+      CNetLib::log("Got message: ",CNetLib::fmt_bytes(msg->content.data(),msg->size)," (",msg->size," bytes)");
       break;
     default:
-      print("Unhandled data type","(",np->len," bytes)");
+      CNetLib::log("Unhandled data type","(",msg->size," bytes)");
   }
 };
 	
 //Connect client to server
-CN_Connection *new_connection = cli.connect("127.0.0.1");
+CN::Connection *new_connection = cli.connect("127.0.0.1");
   
 //Send greeting
-new_connection->pack_and_send(CN_DataType::CN_TEXT,"Hello from client");
+new_connection->package_and_send(CN::DataType::TEXT,"Hello from client");
 ```
 
 ## Compiling
