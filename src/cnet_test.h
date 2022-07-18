@@ -14,15 +14,29 @@ bool test_network_transfer(CN::Server *serv,CN::Client *client) {
 	CN::Connection *nc = client->connect("127.0.0.1");
 
 	if(nc == nullptr) {
-		print("Connection test failing");
+		CNetLib::print("Connection test failing");
 		return false;
 	}
 
-	print("Connection test passing");
+	CNetLib::print("Connection test passing");
 
-	int written = nc->package_and_send("test message");
+	bool msg_passing = false;
+	bool msg_received = false;
 
-	return true;
+	size_t test_size = CN_BUFFER_SIZE*(1);
+
+	byte_t *test_data = new byte_t[test_size];
+	for(int i=0;i<test_size;++i) {
+		test_data[i] = (byte_t)(rand()%256);
+	}
+
+	client->msg_handler = serv->msg_handler;
+
+	nc->package_and_send(test_data,test_size);
+
+	while(msg_received == false) {}
+
+	return msg_passing;
 }
 
 bool test_serializer(size_t test_size) {
@@ -41,31 +55,27 @@ bool test_serializer(size_t test_size) {
 
 	for(int i=0;i<test_size;i++) {
 		if(data[i] != new_data[i]) {
-			print("Serializer error at index ",i," (",data[i]," got ",new_data[i]);
+			CNetLib::print("Serializer error at index ",i," (",data[i]," got ",new_data[i]);
 			return false;
 		}
 	}
 	free(data);
 	free(new_data);
-	print("Serializer test passing");
+	CNetLib::print("Serializer test passing");
 	return true;
 }
 
-void run_tests() {
+void run_tests(CN::Server* test_server,CN::Client *test_client) {
 	bool passing = true;
 	if(test_serializer(CN_BUFFER_SIZE*5) == false) passing = false;
 
-	CN::Server *test_server = new CN::Server(5555);
-	CN::Client *test_client = new CN::Client(5555);
-
-	if(test_network_transfer(test_server,test_client) == false) passing = false;
+//	if(test_network_transfer(test_server,test_client) == false) passing = false;
 
 	if(passing) {
-		print("All tests passing");
+		CNetLib::print("All tests passing");
 	} else {
-		print("One or more tests failing");
+		CNetLib::print("One or more tests failing");
 	}
-
 }
 
 #ifdef VERS2
@@ -94,11 +104,11 @@ bool test_network_transfer() {
 	});
 
 	cli.set_message_handler([&](CN_Message *pck) {
-		print("Got ",pck->len," bytes");
+		CNetLib::print("Got ",pck->len," bytes");
 		for(int i=0;i<test_size;i++) {
-//			print(i,": ",pck->content[i]," :: ",data[i]);
+//			CNetLib::print(i,": ",pck->content[i]," :: ",data[i]);
 			if(pck->content[i] != data[i]) {
-				print("Data integrity test failed at char ",i,": ",pck->content[i]," :: ",data[i]);
+				CNetLib::print("Data integrity test failed at char ",i,": ",pck->content[i]," :: ",data[i]);
 				passing = false;
 //				break;
 			}
@@ -135,7 +145,7 @@ bool test_serializer(size_t test_size) {
 
 	for(int i=0;i<test_size;i++) {
 		if(data[i] != new_data[i]) {
-			print("Serializer error at index ",i," (",data[i]," got ",new_data[i]);
+			CNetLib::print("Serializer error at index ",i," (",data[i]," got ",new_data[i]);
 			return false;
 		}
 	}
@@ -150,9 +160,9 @@ void run_tests() {
 	if(test_network_transfer() == false) passing = false;
 
 	if(passing) {
-		print("All tests passing");
+		CNetLib::print("All tests passing");
 	} else {
-		print("One or more tests failing");
+		CNetLib::print("One or more tests failing");
 	}
 
 }

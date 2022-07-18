@@ -13,7 +13,10 @@ void serializer::show_bytes() {
 
 void serializer::set_data(void *new_data) {
 //	this->reset();
-//	free(this->data);
+	if(this->using_ext_data == false) {
+		free(this->data);
+		this->using_ext_data = true;
+	}
 	this->data = (unsigned char*)new_data;
 	this->data_set_ptr = (unsigned char*)this->data;
 	this->data_get_ptr = (unsigned char*)this->data;
