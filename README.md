@@ -20,7 +20,7 @@ serv.set_message_handler([](CN::Message *msg) {
       CNetLib::log("Got message: ",CNetLib::fmt_bytes(msg->content.data(),msg->size)," (",msg->size," bytes)");
       break;
     default:
-      CNetLib::log("Unhandled data type","(",msg->size," bytes)");
+      CNetLib::log("Unhandled message type"," (",msg->size," bytes)");
   }
 };
 	
@@ -29,6 +29,9 @@ CN::Connection *new_connection = cli.connect("127.0.0.1");
   
 //Send greeting
 new_connection->package_and_send(CN::DataType::TEXT,"Hello from client");
+
+//Send greeting with a custom message type
+new_connection->package_and_send(43,"Message type 43");
 ```
 
 ## Compiling
