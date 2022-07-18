@@ -22,7 +22,7 @@ serv.set_message_handler([](CN::Message *msg) {
     default:
       CNetLib::log("Unhandled message type"," (",msg->size," bytes)");
   }
-};
+});
 	
 //Connect client to server
 CN::Connection *new_connection = cli.connect("127.0.0.1");
