@@ -7,9 +7,6 @@ CNetLib is a high-level, multithreaded networking library for handling basic TCP
 
 ## Usage
 ```cpp
-CN_Server serv;         //Server object
-CN_Client cli;          //Client object
-
 CN::Client cli = CN::Client(5555);  //Initialize network objects on port 5555
 CN::Server serv = CN::Server(5555);   //
 
