@@ -1,5 +1,5 @@
 # CNetLib
-CNetLib is a high-level, multithreaded networking library for handling basic TCP messaging 
+CNetLib is a high-level, multithreaded networking library for handling basic TCP messaging
 
 ## Changes in v3
 * Improved performance
