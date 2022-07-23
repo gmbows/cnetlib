@@ -16,10 +16,11 @@
 #define CN_BUFFER_SIZE 65536
 #define CN_PROTOCOL_VERS 1
 #define CN_HEADER_SIZE 8
+
 #define VC_QUERY_LEN 16
+#define VC_RESP_LEN 8
 
 typedef unsigned char byte_t;
-typedef int vc_resp_t;
 
 using asio::ip::tcp;
 
@@ -43,6 +44,8 @@ enum class DataType: int {
 	STREAM_DATA,
 	STREAM_FIN,
 };
+
+void init();
 
 extern unsigned int num_connections;
 

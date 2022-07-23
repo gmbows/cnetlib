@@ -3,41 +3,7 @@
 #include "cnetlib.h"
 #include "serializer.h"
 #include <random>
-
-bool test_network_transfer(CN::Server *serv,CN::Client *client) {
-
-	serv->start_listener();
-
-	while(serv->active == false) {
-	}
-
-	CN::Connection *nc = client->connect("127.0.0.1");
-
-	if(nc == nullptr) {
-		CNetLib::print("Connection test failing");
-		return false;
-	}
-
-	CNetLib::print("Connection test passing");
-
-	bool msg_passing = false;
-	bool msg_received = false;
-
-	size_t test_size = CN_BUFFER_SIZE*(1);
-
-	byte_t *test_data = new byte_t[test_size];
-	for(int i=0;i<test_size;++i) {
-		test_data[i] = (byte_t)(rand()%256);
-	}
-
-	client->msg_handler = serv->msg_handler;
-
-	nc->package_and_send(test_data,test_size);
-
-	while(msg_received == false) {}
-
-	return msg_passing;
-}
+#include <chrono>
 
 bool test_serializer(size_t test_size) {
 	serializer s = serializer(CN_BUFFER_SIZE);
@@ -65,9 +31,36 @@ bool test_serializer(size_t test_size) {
 	return true;
 }
 
+bool test_verification_hashes(int nchecks) {
+	std::vector<std::string> c;
+	CN::NetObj hasher = CN::NetObj(1738);
+	double _total = 0;
+	for(int i=0;i<nchecks;i++) {
+		std::string chal = CNetLib::random_hex_string(VC_QUERY_LEN);
+		auto t_start = std::chrono::high_resolution_clock::now();
+		std::string resp = hasher.make_validation_hash(chal);
+		auto t_end = std::chrono::high_resolution_clock::now();
+		double elapsed = std::chrono::duration<double, std::milli>(t_end-t_start).count();
+		_total+=elapsed;
+		if(CNetLib::contains(c,chal)) {
+			CNetLib::print("Collision for ",chal,": ",resp);
+		} else {
+			c.push_back(resp);
+		}
+		if(resp.size() != VC_RESP_LEN) {
+			CNetLib::print("Incorrect response length for challenge ",chal,": ",resp);
+		}
+	}
+	CNetLib::print("Unique hashes: ",c.size(),", Collisions: ",nchecks-c.size());
+	CNetLib::print("Completed in ",_total,"ms,","(",_total/nchecks," ms/hash)");
+	return true;
+}
+
 void run_tests(CN::Server* test_server,CN::Client *test_client) {
 	bool passing = true;
 	if(test_serializer(CN_BUFFER_SIZE*5) == false) passing = false;
+
+	test_verification_hashes(655);
 
 //	if(test_network_transfer(test_server,test_client) == false) passing = false;
 

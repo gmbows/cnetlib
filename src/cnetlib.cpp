@@ -2,11 +2,18 @@
 
 #include "serializer.h"
 
+#include <cmath>
 #include <string>
 #include <fstream>
 
 namespace CN {
 	unsigned int num_connections = 0;
+
+	void init() {
+		if(VC_RESP_LEN*4 >= sizeof(size_t)*8) {
+			CNetLib::log("Validation response length too large");
+		}
+	}
 }
 
 //Constructors
@@ -95,11 +102,12 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 			return this->graceful_disconnect();
 		}
 
-		//Set type
+		//Set message type
 		this->cur_msg->init_transfer(rem);
 		this->cur_msg->type = (int)n_type;
 
-		//Unpack type specific data and handle info messages
+		//Internally handle system messages
+		//Assume system messages are sent in a single complete packet
 		switch(n_type) {
 			case CN::DataType::VC_QUERY: {
 				std::string challenge = s.get_str(VC_QUERY_LEN);
@@ -113,24 +121,21 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 //					CNetLib::log("Error: No validation challenge",(this->incoming)? " (for client)" : " (for server)");
 					return this->reinit_or_reset_transfer(data,len);
 				}
-				std::string resp = s.get_str(sizeof(vc_resp_t)*2);
+				std::string resp = s.get_str(VC_RESP_LEN);
 				this->check_validation_response(resp);
 				return this->reinit_or_reset_transfer(data,len);
 			}
 			case CN::DataType::CLOSE:
 				return this->graceful_disconnect(); //Deletes this object
-			case CN::DataType::TEXT:
-				break;
 			case CN::DataType::FILE:
 				this->cur_msg->f_path = s.get_str();
 				CNetLib::log("Now reading file: ",this->cur_msg->f_path);
 				break;
 			default:
-				CNetLib::log("Unknown data type ",(int)n_type);
+				CNetLib::log("Unknown or user data type ",(int)n_type);
 //				return this->reset_transfer();
 				break;
 		}
-
 		this->reading = true;
 	}
 	if(this->reading) {
@@ -142,6 +147,9 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 		size_t actual_len = s.get_data(new_chunk,len_estimate);
 
 		if(this->cur_msg->import_data(new_chunk,actual_len)) {
+			//BUG: This packet could still contain
+			// the header of a new message. Once this function exits,
+			// that header (and the entire message) will be lost
 			this->dispatch_msg();
 		}
 	}
@@ -293,10 +301,10 @@ CN::Connection* CN::NetObj::register_connection(tcp::socket *new_sock,bool is_in
 	CNetLib::log("Creating new validation challenge");
 	std::string new_challenge = this->generate_validation_challenge();
 	std::string new_hash = this->make_validation_hash(new_challenge);
-	while(new_hash.size() != 8) {
-		new_challenge = this->generate_validation_challenge();
-		new_hash = this->make_validation_hash(new_challenge);
-	}
+//	while(new_hash.size() != VC_RESP_LEN) {
+//		new_challenge = this->generate_validation_challenge();
+//		new_hash = this->make_validation_hash(new_challenge);
+//	}
 	this->validation_challenges.insert({nc->id,new_hash});
 	nc->package_and_send(DataType::VC_QUERY,new_challenge);
 	CNetLib::log("Sent validation query ",(nc->incoming)? " (to client)" : " (to server)");
@@ -327,7 +335,7 @@ void CN::NetObj::graceful_disconnect(Connection *c) {
 }
 
 std::string CN::NetObj::make_validation_hash(std::string input) {
-	if(input.size() == 0) return "5REE";
+	if(input.size() == 0) return "88888888";
 
 	//Constants
 	const byte_t c1 = 0x8aU+CN_PROTOCOL_VERS;
@@ -335,18 +343,30 @@ std::string CN::NetObj::make_validation_hash(std::string input) {
 	const byte_t c3 = 0xa7U+CN_PROTOCOL_VERS;
 	const byte_t c4 = 0xF3U+CN_PROTOCOL_VERS;
 
-	short affix = input[input.size()/2];
+	const unsigned short affix = input[input.size()/2];
 
-	vc_resp_t hash = c3; //32 bit int = 8 char hex
+	size_t hash = c3; //32 bit int = 8 char hex
 
 	//Should be at least enough for the resulting hex to be 8 chars
-	int steps = VC_QUERY_LEN;
+	const short bit_min = 4*(VC_RESP_LEN-1);
+	const short bit_max = 4*(VC_RESP_LEN);
+	const size_t _min = pow(2,bit_min);
+	const size_t _max = pow(2,bit_max)-1;
+	const size_t _target = (_min+_max)/2;
 
-	for(int i=0;i<steps;i++) {
-		hash = hash ^ (input[i%input.size()]) ^ (1+affix);
-		hash *= (i%4==0) ? (c1) : (i%3 == 0) ? (c2) : (i%2==0) ? (c3) : (c4);
+	const short steps = VC_RESP_LEN;
+
+	auto hash_step = [&](size_t &_hash, const std::string _input,const int _it) {
+		_hash = _hash ^ (input[_it%input.size()]) ^ (1+affix);
+		_hash *= (_it%4==0) ? (c1) : (_it%3 == 0) ? (c2) : (_it%2==0) ? (c3) : (c4);
+	};
+
+	int i=0;
+	while(hash < _target) {
+		hash_step(hash,input,i);
+		i++;
 	}
 	std::stringstream hexout;
 	hexout << std::hex << hash;
-	return hexout.str();
+	return hexout.str().substr(hexout.str().size()-VC_RESP_LEN,VC_RESP_LEN);
 }
