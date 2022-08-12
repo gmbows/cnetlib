@@ -36,7 +36,7 @@ new_connection->package_and_send(43,"Message type 43");
 
 ## Linking
 
-`asio.hpp` must be in your include path.  Link with `-lstdc++fs` and definitions `-DASIO_STANDALONE -D_REENTRANT -D_WIN32_WINNT=0x0601`
+`asio.hpp` must be in your include path.  Link with `-lstdc++fs` and definitions `-DASIO_STANDALONE -D_REENTRANT -D_WIN32_WINNT=0x0601` <br>
 Include `-lws2_32 -lwsock32` on Windows.
 
 ## Dependencies
