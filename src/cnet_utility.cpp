@@ -233,4 +233,20 @@ namespace CNetLib {
 		for(int i=0;i<len;i++) s << std::hex << rand()%16;
 		return s.str();
 	}
+
+	bool create_file(std::string filename) {
+		if(CNetLib::file_exists(filename)) return true;
+		bool success = false;
+		std::ofstream f(filename,std::ios::binary);
+		success = f.is_open();
+		f.close();
+		return success;
+	}
+
+	std::string as_hex(int s)	{
+		std::stringstream out;
+		out << std::hex << s;
+		return out.str();
+	}
+
 }

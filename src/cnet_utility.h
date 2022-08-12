@@ -83,9 +83,9 @@ namespace CNetLib {
 		{
 			std::lock_guard<std::mutex> m{print_mutex};
 			log_statement << t;
+			log_handler(log_statement.str());
 		}
 		print(log_statement.str());
-		log_handler(log_statement.str());
 		log_statement.str("");
 	}
 
@@ -105,6 +105,50 @@ namespace CNetLib {
 	std::string conv_bytes(size_t);
 	std::string fmt_bytes(unsigned char *bytes,size_t len);
 	std::string random_hex_string(int);
+	std::string as_hex(int);
+
+	//Wait on a variable
+	struct Waiter {
+		std::condition_variable cv;
+		std::mutex m;
+		bool *ready;
+		bool override = false;
+		void await() {
+			while(this->override == false and *this->ready == false) {
+				{
+					std::unique_lock lk(this->m);
+					this->cv.wait(lk);
+				}
+			}
+			this->override = false;
+		}
+		void wake_one() {
+			this->cv.notify_one();
+		}
+		void wake_all() {
+			this->cv.notify_all();
+		}
+		void wait() {
+			if(*this->ready == false) this->await();
+		}
+		bool wait(unsigned timeout) {
+			bool timed_out = false;
+			//Awakens self if unready by timeout
+			std::thread([&,this](){
+				std::this_thread::sleep_for(std::chrono::milliseconds(timeout));
+				if(*this->ready == false) {
+					timed_out = true;
+					this->override = true;
+					this->wake_one();
+				}
+			}).detach();
+			this->wait();
+			return timed_out;
+		}
+		Waiter(bool *_ready) {
+			this->ready = _ready;
+		}
+	};
 
 	//=========
 	// VECTOR
@@ -158,6 +202,7 @@ namespace CNetLib {
 	// I/O
 	//=========
 
+
 	std::string get_filename(std::string path);
 	size_t import_file(const std::string &filename,unsigned char*&);
 	std::vector<char> import_file(const std::string &filename);
@@ -168,4 +213,5 @@ namespace CNetLib {
 	size_t file_size(std::string path);
 
 	bool make_directory(std::string);
+	bool create_file(std::string);
 }

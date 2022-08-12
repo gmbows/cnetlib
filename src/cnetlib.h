@@ -26,40 +26,61 @@ using asio::ip::tcp;
 
 namespace CN {
 
-struct Message;
+struct UserMessage;
 struct Connection;
-typedef std::function<void(Message*)> MessageHandler;
+struct Channel;
+
+typedef std::function<void(UserMessage*)> MessageHandler;
 typedef std::function<void(Connection*)> ConnectionHandler;
+typedef std::function<void(Channel*)> ChannelHandler;
+
+//maps uid to Channel*
+extern std::map<std::string,Channel*> channel_map;
+
+Channel* get_channel(std::string _uid);
 
 enum class DataType: int {
+
+	//Basic data types
 	TEXT,
 	FILE,
+	JSON,
 
+	//Close connection
 	CLOSE,
 
+	//Validation challenge
 	VC_QUERY,
 	VC_RESP,
+	VC_VALID,
 
+	//Channels
+	CHAN_CREATE,
+	CHAN_ATTACH,
+
+	//Streaming
 	STREAM_INIT,
-	STREAM_DATA,
-	STREAM_FIN,
+	//Between these two packets, all incoming packets will be streamed
+	// directly to the file initialized in the STREAM_INIT message
+	STREAM_TERM,
 };
+
 
 void init();
 
 extern unsigned int num_connections;
+//extern unsigned int num_channels;
 
 struct NetObj;
 
-struct Message {
+struct UserMessage {
 
 	int type;
 
 	bool complete;
-	std::string f_path;
+	std::string f_name;
 
 	std::vector<byte_t> content;
-	CN::NetObj *owner;
 	CN::Connection *connection;
 
 	size_t size;
@@ -76,6 +97,18 @@ struct Message {
 		return this->complete;
 	}
 
+	//Import len of data without copying
+	// Used when data is spread over multiple packets
+	// And will not be exposed to user-defined handlers
+	bool import_data_size(size_t len) {
+		this->size += len;
+		this->bytes_left -= len;
+		if(this->bytes_left <= 0) {
+			this->complete = true;
+		}
+		return this->complete;
+	}
+
 	void init_transfer(size_t len) {
 //		print("Initializing transfer of ",len," bytes");
 //		this->content.clear();
@@ -83,17 +116,25 @@ struct Message {
 		this->content.resize(len,'\0');
 	}
 
-	Message(CN::Connection *parent): connection(parent) {
+	UserMessage(CN::Connection *parent): connection(parent) {
 		this->size = 0;
 		this->complete = false;
 //		this->bytes_left = 0;
 	}
 
-	Message(size_t _bytes): bytes_left(_bytes) {
+	UserMessage(size_t _bytes): bytes_left(_bytes) {
 		this->size = 0;
 		this->complete = false;
 	}
-	~Message() {}
+	~UserMessage() {}
+};
+
+struct PackedMessage {
+	serializer s;
+	PackedMessage(int type,size_t len) {
+		this->s.add_int(type);
+		this->s.add_long(len);
+	}
 };
 
 struct Connection {
@@ -103,20 +144,34 @@ struct Connection {
 	int id;
 	bool incoming;
 
-	bool validated; //Has this connection sent a valid packet yet
+	bool validated;			//Has this connection received a valid packet yet
+	bool remote_validated;	//Has the remote host validated this connection
 	bool active;	//Is this connection active
 	bool reading;	//Is this connection currently reading a message body
 
+	std::string getname() {
+		return	CNetLib::as_hex(this->id) + "." +
+				std::to_string(this->active) +
+				std::to_string(this->validated) +
+				std::to_string(this->remote_validated) +
+				std::to_string(this->reading) +
+				(this->incoming ? ".inc" : ".out") + ".con";
+	}
+
+	CNetLib::Waiter *remote_validation;
+
 	std::string address;
 
-	CN::Message *cur_msg;
+	CN::UserMessage *cur_msg = nullptr;
 	serializer s = serializer(CN_BUFFER_SIZE);
 
-	NetObj* owner;
+	NetObj* owner = nullptr;
+	Channel* parent_channel = nullptr;
 	tcp::socket *sock;
 
 	//DataType and int overloads to support
 	// user defined types
+	size_t send(serializer*);
 	size_t send_info(int);		//Sends packet with 0-length body
 	size_t send_info(DataType); //Sends packet with 0-length body
 	size_t package_and_send(int,std::string);
@@ -124,17 +179,23 @@ struct Connection {
 	size_t package_and_send(int,byte_t*,size_t);
 	size_t package_and_send(DataType,byte_t*,size_t);
 
-	//Always uses internal types
+	//Always uses internal types/no type
 	size_t send_file_with_name(std::string,std::string);
-	size_t send(serializer*);
 	size_t package_and_send(std::string);
 	size_t package_and_send(byte_t*,size_t);
+	size_t init_stream_old(std::string,std::string);	 //takes path,filename
+	size_t term_stream_old(std::string);				 //terminates stream for this filename
 
+	//Streaming
+	bool stream_file(std::string,std::string);
+	std::map<std::string,size_t> stream_info;
+
+	//Holds packet data
 	byte_t *new_chunk = (byte_t*)malloc(CN_BUFFER_SIZE);
 
 	bool precheck_message_type(DataType type) {
 		if(this->validated == false)
-			return type == DataType::VC_QUERY or type == DataType::VC_RESP;
+			return type == DataType::VC_QUERY or type == DataType::VC_RESP or type == DataType::VC_VALID;
 		return true;
 	}
 
@@ -144,10 +205,11 @@ struct Connection {
 	void handle();
 	void process_data(byte_t*,size_t);
 	void dispatch_msg();
+	void peek_msg(); //Call message handler on an incomplete message
 	void reinit_or_reset_transfer(byte_t*,size_t);
 	void reset_transfer() {
 		delete this->cur_msg;
-		this->cur_msg = new CN::Message(this);
+		this->cur_msg = new CN::UserMessage(this);
 		this->reading = false;
 	}
 
@@ -160,11 +222,11 @@ struct Connection {
 		} catch(const std::exception &e) {
 
 		}
-		delete this->sock;
 	}
 	void disconnect() {
 		if(this->active) this->close();
 		this->active = false;
+		this->m_context.stop();
 	}
 	void graceful_disconnect(); //Disconnect socket, send disconnect packet, unregister from netobj
 
@@ -173,6 +235,37 @@ struct Connection {
 		CNetLib::log("Destroying connection ",this->id);
 		free(new_chunk);
 		delete this->cur_msg;
+		delete this->sock;
+	}
+};
+
+struct Channel {
+	std::string uid;
+	CN::Connection *base_connection = nullptr;
+	std::string address() {
+		if(!this->base_connection) {
+			CNetLib::log("Channel error: No base connection");
+			return "0.0.0.0";
+		}
+		return this->base_connection->address;
+	}
+
+	std::string getname() {
+		return this->uid + ".chan";
+	}
+
+	Channel() {
+
+	}
+	Channel(CN::Connection *cn): uid(CNetLib::random_hex_string(4)) {
+//		CNetLib::log("New chan.",uid);
+		this->base_connection = cn;
+		cn->parent_channel = this;
+	}
+	Channel(CN::Connection *cn,std::string _uid): uid(_uid) {
+//		CNetLib::log("New chan.",uid);
+		this->base_connection = cn;
+		cn->parent_channel = this;
 	}
 };
 
@@ -185,11 +278,15 @@ struct NetObj {
 	short port;
 	bool active;
 
+
+	//Handlers
 	MessageHandler msg_handler;
 	ConnectionHandler connection_handler;
+	ChannelHandler channel_handler;
 
 	bool has_msg_handler = false;
 	bool has_connection_handler = false;
+	bool has_channel_handler = false;
 
 	void set_msg_handler(MessageHandler fnc) {
 		this->msg_handler = fnc;
@@ -199,28 +296,47 @@ struct NetObj {
 		this->connection_handler = fnc;
 		this->has_connection_handler = true;
 	}
-	void call_message_handler(Message *msg) {
+	void set_channel_handler(ChannelHandler fnc) {
+		this->channel_handler = fnc;
+		this->has_channel_handler = true;
+	}
+
+	void call_message_handler(UserMessage *msg) {
 		if(this->has_msg_handler) {
 			this->msg_handler(msg);
 		} else {
-			CNetLib::log("No message handler set");
+			CNetLib::log("No message handler set, ignoring ",msg->size," bytes");
 		}
 	}
 	void call_connection_handler(Connection *nc) {
 		if(this->has_connection_handler) {
 			this->connection_handler(nc);
 		} else {
-			CNetLib::log("No connection handler set");
+//			CNetLib::log("No connection handler set");
+		}
+	}	
+	void call_channel_handler(Channel *cn) {
+		if(this->has_channel_handler) {
+			this->channel_handler(cn);
+		} else {
+//			CNetLib::log("No channel handler set");
 		}
 	}
+
+	//Channels
+	std::vector<CN::Channel*> channels;
+	CN::Channel* register_channel(CN::Connection*,std::string id = "none");
 
 	//Connections
 	std::vector<CN::Connection*> connections;
 	CN::Connection* register_connection(tcp::socket*,bool is_incoming = false);
 
+	//Validation
+	unsigned timeout = 2000; //2000 ms validation timeout
 	std::map<int,std::string> validation_challenges;
 	inline std::string generate_validation_challenge() {return CNetLib::random_hex_string(VC_QUERY_LEN);}
 
+	//Closing
 	void graceful_disconnect(CN::Connection *c);
 	void remove_connection(CN::Connection*);
 
@@ -247,6 +363,8 @@ struct NetObj {
 struct Client : public NetObj {
 	tcp::resolver *resolver;
 	CN::Connection *connect(std::string);
+
+	CN::Channel* create_channel(std::string);
 
 	Client(short _port): NetObj(_port) {
 		this->resolver = new tcp::resolver(this->m_io_context);

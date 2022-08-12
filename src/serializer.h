@@ -188,6 +188,7 @@ public:
 		}
 	}
 
+	//Adds a padded 256-char string
 	void add_str(std::string s) {
 		for(int i=0;i<256;i++) {
 			if(i < s.size()) {
@@ -233,6 +234,8 @@ public:
 
 		if(!this->test_ptrs()) exit(0);
 	}
+
+	serializer() {}
 
 	serializer(size_t __data_size): data_size(__data_size) {
 		this->initialize(__data_size);
