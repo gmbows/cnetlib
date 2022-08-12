@@ -34,10 +34,10 @@ new_connection->package_and_send(CN::DataType::TEXT,"Hello from client");
 new_connection->package_and_send(43,"Message type 43");
 ```
 
-## Compiling
+## Linking
 
-`make` in a Windows GNU shell (such as MinGW) <br>
-`make -f makefile_linux` in a native GNU/Linux shell
+`asio.hpp` must be in your include path.  Link with `-lstdc++fs` and definitions `-DASIO_STANDALONE -D_REENTRANT -D_WIN32_WINNT=0x0601`
+Include `-lws2_32 -lwsock32` on Windows.
 
 ## Dependencies
 * [ASIO 1.18.1](https://sourceforge.net/projects/asio/files/asio/1.18.1%20%28Stable%29/) (non-boost) Or release 1.13.0+ <br>
