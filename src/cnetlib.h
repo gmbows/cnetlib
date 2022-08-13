@@ -13,12 +13,19 @@
 #include <string>
 #include "serializer.h"
 
+#define CN_MTYPE_T int
+#define CN_MSIZE_T size_t
+
 #define CN_BUFFER_SIZE 65536
 #define CN_PROTOCOL_VERS 1
-#define CN_HEADER_SIZE 8
+//#define CN_HEADER_SIZE 8
 
 #define VC_QUERY_LEN 16
 #define VC_RESP_LEN 8
+
+constexpr unsigned CN_HEADER_SIZE() {
+	return sizeof(CN_MTYPE_T) + sizeof(CN_MSIZE_T);
+}
 
 typedef unsigned char byte_t;
 
@@ -34,12 +41,16 @@ typedef std::function<void(UserMessage*)> MessageHandler;
 typedef std::function<void(Connection*)> ConnectionHandler;
 typedef std::function<void(Channel*)> ChannelHandler;
 
+extern MessageHandler default_msg_handler;
+extern ConnectionHandler default_connection_handler;
+extern ChannelHandler default_channel_handler;
+
 //maps uid to Channel*
 extern std::map<std::string,Channel*> channel_map;
 
 Channel* get_channel(std::string _uid);
 
-enum class DataType: int {
+enum class DataType: CN_MTYPE_T {
 
 	//Basic data types
 	TEXT,
@@ -75,7 +86,7 @@ struct NetObj;
 
 struct UserMessage {
 
-	int type;
+	CN_MTYPE_T type;
 
 	bool complete;
 	std::string f_name;
@@ -85,6 +96,10 @@ struct UserMessage {
 
 	size_t size;
 	size_t bytes_left;
+
+	std::string str() {
+		return CNetLib::fmt_bytes(this->content.data(),this->size);
+	}
 
 	bool import_data(byte_t *data,size_t len) {
 //		CNetLib::log("Importing ",len," bytes");
@@ -130,10 +145,18 @@ struct UserMessage {
 };
 
 struct PackedMessage {
-	serializer s;
-	PackedMessage(int type,size_t len) {
-		this->s.add_int(type);
-		this->s.add_long(len);
+	serializer s = serializer(1024);
+	PackedMessage(DataType type,CN_MSIZE_T len) {
+		this->s.add_auto((CN_MTYPE_T)type);
+		this->s.add_auto(len);
+	}
+	PackedMessage(CN_MTYPE_T type,CN_MSIZE_T len) {
+		this->s.add_auto(type);
+		this->s.add_auto(len);
+	}
+	PackedMessage(CN_MTYPE_T type) {
+		this->s.add_auto(type);
+		this->s.add_auto<CN_MSIZE_T>(0);
 	}
 };
 
@@ -163,7 +186,7 @@ struct Connection {
 	std::string address;
 
 	CN::UserMessage *cur_msg = nullptr;
-	serializer s = serializer(CN_BUFFER_SIZE);
+	serializer s_importer = serializer(CN_BUFFER_SIZE);
 
 	NetObj* owner = nullptr;
 	Channel* parent_channel = nullptr;
@@ -172,17 +195,18 @@ struct Connection {
 	//DataType and int overloads to support
 	// user defined types
 	size_t send(serializer*);
-	size_t send_info(int);		//Sends packet with 0-length body
+	size_t send(PackedMessage*);
+	size_t send_info(CN_MTYPE_T);		//Sends packet with 0-length body
 	size_t send_info(DataType); //Sends packet with 0-length body
-	size_t package_and_send(int,std::string);
+	size_t package_and_send(CN_MTYPE_T,std::string);
 	size_t package_and_send(DataType,std::string);
-	size_t package_and_send(int,byte_t*,size_t);
-	size_t package_and_send(DataType,byte_t*,size_t);
+	size_t package_and_send(CN_MTYPE_T,byte_t*,CN_MSIZE_T);
+	size_t package_and_send(DataType,byte_t*,CN_MSIZE_T);
 
 	//Always uses internal types/no type
 	size_t send_file_with_name(std::string,std::string);
 	size_t package_and_send(std::string);
-	size_t package_and_send(byte_t*,size_t);
+	size_t package_and_send(byte_t*,CN_MSIZE_T);
 	size_t init_stream_old(std::string,std::string);	 //takes path,filename
 	size_t term_stream_old(std::string);				 //terminates stream for this filename
 
@@ -232,7 +256,7 @@ struct Connection {
 
 	Connection(tcp::socket *new_sock);
 	~Connection() {
-		CNetLib::log("Destroying connection ",this->id);
+		CNetLib::log(this->getname(),": Destroying");
 		free(new_chunk);
 		delete this->cur_msg;
 		delete this->sock;
@@ -251,7 +275,11 @@ struct Channel {
 	}
 
 	std::string getname() {
-		return this->uid + ".chan";
+		return this->uid +
+				(!this->base_connection ? ".nul" :
+					(this->base_connection->incoming ? ".inc" : ".out")
+				) +
+				".chan";
 	}
 
 	Channel() {
@@ -275,7 +303,7 @@ struct NetObj {
 	asio::io_context m_io_context;
 
 	//Basic info
-	short port;
+	unsigned short port;
 	bool active;
 
 
@@ -305,7 +333,7 @@ struct NetObj {
 		if(this->has_msg_handler) {
 			this->msg_handler(msg);
 		} else {
-			CNetLib::log("No message handler set, ignoring ",msg->size," bytes");
+			CN::default_msg_handler(msg);
 		}
 	}
 	void call_connection_handler(Connection *nc) {
@@ -381,8 +409,10 @@ struct Server : public NetObj {
 	tcp::acceptor *acceptor;
 
 	void start_listener() {
+		std::thread(&CNetLib::create_upnp_mapping,this->port).detach();
 		std::thread(&CN::Server::listen,this).detach();
 		this->start_io();
+//		CNetLib::create_upnp_mapping(this->port);
 	}
 
 	void listen();

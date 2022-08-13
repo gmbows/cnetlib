@@ -249,4 +249,63 @@ namespace CNetLib {
 		return out.str();
 	}
 
+	void create_upnp_mapping(unsigned short port) {
+		int error = 0;
+		struct UPNPDev *upnp_dev = upnpDiscover(
+					1000    , // time to wait (milliseconds)
+					nullptr , // multicast interface (or null defaults to 239.255.255.250)
+					nullptr , // path to minissdpd socket (or null defaults to /var/run/minissdpd.sock)
+					0       , // source port to use (or zero defaults to port 1900)
+					0       , // 0==IPv4, 1==IPv6
+					2,
+					&error  ); // error
+		if(error) {
+			CNetLib::log("Error in UPnP device discovery: ",error);
+			return;
+		}
+		CNetLib::log("UPnP found IGD");
+//		CNetLib::log("Found UPnP device at ",upnp_dev->descURL);
+		//Ignore other devices for now
+		//		while(upnp_dev->pNext) {
+		//			upnp_dev = upnp_dev->pNext;
+		//			CNetLib::log(upnp_dev->descURL);
+		//		}
+
+		char lan_address[64];
+		struct UPNPUrls upnp_urls;
+		struct IGDdatas upnp_data;
+		int status = UPNP_GetValidIGD(upnp_dev, &upnp_urls, &upnp_data, lan_address, sizeof(lan_address));
+		// look up possible "status" values, the number "1" indicates a valid IGD was found
+
+		CNetLib::log("UPnP IGD Status: ",status);
+
+		// get the external (WAN) IP address
+		char wan_address[64];
+		UPNP_GetExternalIPAddress(upnp_urls.controlURL, upnp_data.first.servicetype, wan_address);
+
+		//		CNetLib::log("Wan addr: ",wan_address);
+
+		// add a new TCP port mapping from WAN port 12345 to local host port 24680
+		error = UPNP_AddPortMapping(
+					upnp_urls.controlURL,
+					upnp_data.first.servicetype,
+					std::to_string(port).c_str()     ,  // external (WAN) port requested
+					std::to_string(port).c_str()     ,  // internal (LAN) port to which packets will be redirected
+					lan_address , // internal (LAN) address to which packets will be redirected
+					"CNetLib UPnP", // text description to indicate why or who is responsible for the port mapping
+					"TCP"       , // protocol must be either TCP or UDP
+					nullptr     , // remote (peer) host address or nullptr for no restriction
+					"0"     ); // port map lease duration (in seconds) or zero for "as long as possible"
+
+		if(error)
+			CNetLib::log("Error creating UPnP mapping: ",error);
+		else
+			CNetLib::log("Created UPnP mapping ",port,"->",port);
+
+	}
+
+	void list_upnp_mappings() {
+		// list all port mappings
+	}
+
 }

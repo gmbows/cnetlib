@@ -162,6 +162,28 @@ public:
 		if(data_set_ptr >= this->data_end) this->realloc_data();
 	}
 
+	template <typename T>
+	T get_auto() {
+		T *i = (T*)data_get_ptr;
+//		if(this->byte_lengths[byte_length_get] != sizeof(int)) {
+//			CNetLib::print("Invalid fetch (",sizeof(int),", expected ",this->byte_lengths[byte_length_get],")");
+//			return -1;
+//		}
+		data_get_ptr += sizeof(T);
+		if(this->data_get_ptr > this->data_end) {
+			CNetLib::print("Error: Accessing beyond end of serialized data");
+		}
+//		byte_length_get++;
+		return *i;
+	}
+
+	template <typename T>
+	void add_auto(T t) {
+		memcpy(this->data_set_ptr,&t,sizeof(T));
+		data_set_ptr += sizeof(t);
+		if(data_set_ptr >= this->data_end) this->realloc_data();
+	}
+
 	void add_float(float i) {
 		memcpy(this->data_set_ptr,&i,sizeof(float));
 		data_set_ptr += sizeof(i);
@@ -234,8 +256,6 @@ public:
 
 		if(!this->test_ptrs()) exit(0);
 	}
-
-	serializer() {}
 
 	serializer(size_t __data_size): data_size(__data_size) {
 		this->initialize(__data_size);

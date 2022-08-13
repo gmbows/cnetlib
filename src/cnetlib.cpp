@@ -10,10 +10,25 @@ namespace CN {
 unsigned int num_connections = 0;
 //unsigned int num_channels = 0;
 
+MessageHandler default_msg_handler = [](UserMessage *msg) {
+	CNetLib::log("(Default) ",msg->connection->getname(),": ",msg->str());
+};
+
+ConnectionHandler default_connection_handler = [](Connection *cn) {
+	CNetLib::log("(Default) ",cn->getname(),": Established");
+};
+
+ChannelHandler default_channel_handler = [](Channel *chan) {
+	CNetLib::log("(Default) ",chan->getname(),": Created");
+};
+
 void init() {
 	if(VC_RESP_LEN*4 >= sizeof(size_t)*8) {
 		CNetLib::log("Validation response length too large");
 	}
+	CNetLib::log("(INFO) Header type size ",sizeof(CN_MTYPE_T));
+	CNetLib::log("(INFO) Header size size ",sizeof(CN_MSIZE_T));
+	CNetLib::log("(INFO) Total ",CN_HEADER_SIZE());
 }
 
 std::map<std::string,Channel*> channel_map;
@@ -74,14 +89,10 @@ CN::Connection* CN::Client::connect(std::string address) {
 
 CN::Channel *CN::Client::create_channel(std::string address) {
 	CN::Connection *nc = this->connect(address);
-	if(nc) {
-		CN::Channel *new_channel = this->register_channel(nc);
-		//non-null
-		nc->package_and_send(CN::DataType::CHAN_CREATE,new_channel->uid);
-		return new_channel;
-	} else {
-		return nullptr;
-	}
+	if(!nc) return nullptr;
+	CN::Channel *new_channel = this->register_channel(nc);
+	nc->package_and_send(CN::DataType::CHAN_CREATE,new_channel->uid);
+	return new_channel;
 }
 
 //Connection
@@ -111,35 +122,38 @@ void CN::Connection::handle() {
 }
 
 void CN::Connection::process_data(byte_t *data, size_t len) {
-	this->s.set_data(data);
+	this->s_importer.set_data(data);
 	if(this->reading == false) {
 
-		if(len < 2*sizeof(int)) {
-			CNetLib::log("Terminating ",this->getname(),": Malformed message");
+		if(len < CN_HEADER_SIZE()) {
+			CNetLib::log(this->getname(),": Terminating, malformed message");
 			return this->graceful_disconnect();
 		}
 
 		//Unpack basic header data (type,length)
-		DataType n_type = (DataType)s.get_int();
-		int rem = s.get_int();
-//		CNetLib::log("Got message of type ",(int)n_type," along with ",len," bytes");
+		DataType n_type = (DataType)s_importer.get_auto<CN_MTYPE_T>();
+		CN_MSIZE_T rem = s_importer.get_auto<CN_MSIZE_T>();
+		//CNetLib::log("Got message of type ",(int)n_type," along with ",len," bytes");
 		//Ignore some messages depending on
 		// the current state of the connection
 		bool proceed = this->precheck_message_type(n_type);
 		if(!proceed) {
-			CNetLib::log("Terminating ",this->getname(),": Suspicious activity");
+			CNetLib::log(this->getname(),": Terminating, suspicious activity");
 			return this->graceful_disconnect();
 		}
 
 		//Set message type
 		this->cur_msg->init_transfer(rem);
-		this->cur_msg->type = (int)n_type;
+		this->cur_msg->type = (CN_MTYPE_T)n_type;
 
 		//Internally handle system messages
-		//Assume system messages are sent in a single complete packet
+		//Depending on the type, we may:
+		// Reset transmission state without dispatching any user messages
+		// Begin reading data into the current user message
+		//
 		switch(n_type) {
 			case CN::DataType::VC_QUERY: {
-				std::string challenge = s.get_str(VC_QUERY_LEN);
+				std::string challenge = s_importer.get_str(VC_QUERY_LEN);
 //				CNetLib::log("Got challenge: ",challenge,(this->incoming)? " (from client)" : " (from server)");
 				this->package_and_send(DataType::VC_RESP,this->owner->make_validation_hash(challenge));
 //				CNetLib::log("Sent response: ",this->owner->make_validation_hash(challenge),(this->incoming)? " (to client)" : " (to server)");
@@ -150,7 +164,7 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 //					CNetLib::log("Error: No validation challenge",(this->incoming)? " (for client)" : " (for server)");
 					return this->reinit_or_reset_transfer(data,len);
 				}
-				std::string resp = s.get_str(VC_RESP_LEN);
+				std::string resp = s_importer.get_str(VC_RESP_LEN);
 				this->check_validation_response(resp);
 				return this->reinit_or_reset_transfer(data,len);
 			}
@@ -161,30 +175,44 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 			}
 			case CN::DataType::CLOSE:
 				return this->graceful_disconnect(); //Deletes this object
-			case CN::DataType::FILE:
-				this->cur_msg->f_name = s.get_str();
-				CNetLib::log(this->getname(),": Now reading file: ",this->cur_msg->f_name);
+			case CN::DataType::FILE: {
+				std::string filename = s_importer.get_str();
+				this->cur_msg->f_name = filename;
+				CNetLib::log(this->getname(),": Receiving file ",this->cur_msg->f_name," (",CNetLib::conv_bytes(rem),")");
 				break;
+			}
 			case CN::DataType::STREAM_INIT: {
-				std::string filename = s.get_str();
-//				int _size = s.get_int();
+				std::string filename = s_importer.get_str();
 				this->cur_msg->f_name = filename;
 				CNetLib::create_file("./received/"+filename);
 				this->stream_info.insert({filename,rem});	//Take total stream size from unused header info
-				CNetLib::log("Initializing stream for ",filename," (",CNetLib::conv_bytes(rem),")");
-				len-=264; //Skip this header and try to import some data
-				//string256 + int32 data type + int32 data length
+				CNetLib::log(this->getname(),": Initializing stream for ",filename," (",CNetLib::conv_bytes(rem),")");
+
+				if(len>256+CN_HEADER_SIZE()) {
+					CNetLib::log("Warning: Partial stream fragment in init message");
+					len-=256+CN_HEADER_SIZE();
+				}
 				break;
+
+				//We can skip the rest of this packet
+				// because in the current stream implementation we send the
+				// init message separately from the first data message,
+				// whereas in the basic file implementation we send the init and data
+				// together in one message
+				//Bug: It's possible that
+				// The first data message is squashed into this message, in which case
+				// we would ignore a partial fragment
+
 //				this->reading = true;
 //				return;
 			}
 			case CN::DataType::CHAN_CREATE: {
-				std::string uid = s.get_str(4);
+				std::string uid = s_importer.get_str(4);
 				this->owner->register_channel(this,uid); //Create a new channel with base connection this
 				return this->reinit_or_reset_transfer(data,len);
 			}
 			case CN::DataType::CHAN_ATTACH: {
-				std::string uid = s.get_str(4);
+				std::string uid = s_importer.get_str(4);
 				CN::Channel *target = CN::get_channel(uid); //Create a new channel with base connection this
 				if(target) {
 					this->parent_channel = target;
@@ -207,7 +235,7 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 		size_t len_estimate = std::min(this->cur_msg->bytes_left,len);
 
 		//Retrieve data from packet
-		size_t actual_len = s.get_data(new_chunk,len_estimate);
+		size_t actual_len = s_importer.get_data(new_chunk,len_estimate);
 
 		if(actual_len == 0) return;
 
@@ -235,13 +263,13 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 }
 
 void CN::Connection::reinit_or_reset_transfer(byte_t *data, size_t len) {
-	if(len-CN_HEADER_SIZE > this->cur_msg->bytes_left) {
+	if(len-CN_HEADER_SIZE() > this->cur_msg->bytes_left) {
 		//Packet is larger than anticipated message size
 		// Meaning this packet contains multiple, potentially incomplete messages
-		CNetLib::log(this->getname(),": Reading squashed packet (",len-CN_HEADER_SIZE-this->cur_msg->bytes_left," bytes)");
+		CNetLib::log(this->getname(),": Reading squashed packet (",len-CN_HEADER_SIZE()-this->cur_msg->bytes_left," bytes)");
 		//Process next message in packet
 		// Offset data pointer by the size of the message we just read
-		return this->process_data(data+this->cur_msg->bytes_left+CN_HEADER_SIZE,len-this->cur_msg->bytes_left-CN_HEADER_SIZE);
+		return this->process_data(data+this->cur_msg->bytes_left+CN_HEADER_SIZE(),len-this->cur_msg->bytes_left-CN_HEADER_SIZE());
 	}
 	return this->reset_transfer();
 }
@@ -278,70 +306,51 @@ size_t CN::Connection::send(serializer *s) {
 	return written;
 }
 
-size_t CN::Connection::send_info(DataType type) {
-	serializer s = serializer(1024);
-	s.add_int((int)type);
-	s.add_int(0);
+size_t CN::Connection::send(PackedMessage *m) {
+	size_t written;
+	try {
+		written = asio::write(*this->sock,asio::buffer(m->s.data,m->s.true_size()));
+	} catch(const std::exception &e) {
+		CNetLib::print(this->getname(), ": Error writing to socket");
+		this->disconnect();
+	}
+	return written;
+}
 
-	size_t written = this->send(&s);
+size_t CN::Connection::send_info(DataType type) {
+
+	PackedMessage m = PackedMessage((CN_MTYPE_T)type);
+
+	size_t written = this->send(&m);
 
 	return written;
 }
 
-size_t CN::Connection::send_info(int type) {
-	serializer s = serializer(1024);
-	s.add_int(type);
-	s.add_int(0);
+size_t CN::Connection::send_info(CN_MTYPE_T type) {
 
-	size_t written = this->send(&s);
+	PackedMessage m = PackedMessage(type);
+
+	size_t written = this->send(&m);
 
 	return written;
 }
 
 size_t CN::Connection::package_and_send(std::string data) {
 
-	serializer s = serializer(CN_BUFFER_SIZE);
-	s.add_int((int)DataType::TEXT);
-	s.add_int(data.size());
-	s.add_str_auto(data);
+	PackedMessage m = PackedMessage(DataType::TEXT,data.size());
+	m.s.add_str_auto(data);
 
-	size_t written = this->send(&s);
+	size_t written = this->send(&m);
 
 	return written;
 }
 
-size_t CN::Connection::package_and_send(byte_t *data, size_t len) {
-	serializer s = serializer(CN_BUFFER_SIZE);
-	s.add_int((int)DataType::TEXT);
-	s.add_int(len);
-	s.add_data(data,len);
+size_t CN::Connection::package_and_send(byte_t *data, CN_MSIZE_T len) {
 
-	size_t written = this->send(&s);
+	PackedMessage m = PackedMessage(DataType::TEXT,len);
+	m.s.add_data(data,len);
 
-	return written;
-}
-
-size_t CN::Connection::init_stream_old(std::string path, std::string filename) {
-	size_t _size = CNetLib::file_size(path);
-
-	serializer s = serializer(CN_BUFFER_SIZE);
-	s.add_int((int)DataType::STREAM_INIT);
-	s.add_int(256);
-	s.add_str(filename);
-	s.add_int(_size); //Assuming file is less than 2gb
-
-	size_t written = this->send(&s);
-
-	return written;
-}
-
-size_t CN::Connection::term_stream_old(std::string filename) {
-	serializer s = serializer(CN_BUFFER_SIZE);
-	s.add_int((int)DataType::STREAM_TERM);
-	s.add_int(256);
-	s.add_str(filename);
-
-	size_t written = this->send(&s);
+	size_t written = this->send(&m);
 
 	return written;
 }
@@ -356,34 +365,32 @@ bool CN::Connection::stream_file(std::string path, std::string filename) {
 
 	std::ifstream _file(path,std::ios::binary);
 
-//	Seek to EOF and check position in stream
+	//Seek to EOF and check position in stream
 	_file.seekg(0,_file.end);
 	size_t _size = _file.tellg();
 	_file.seekg(0,_file.beg);
 
-	serializer s_init = serializer(1024);
-	s_init.add_int((int)CN::DataType::STREAM_INIT);
-	s_init.add_int(_size);
-	s_init.add_str(filename);
-	this->send(&s_init);
+	PackedMessage m = PackedMessage(CN::DataType::STREAM_INIT,_size);
+	m.s.add_str(filename);
+	this->send(&m);
 
-	unsigned char *s_data = (unsigned char*)malloc(CN_BUFFER_SIZE);
+	byte_t *s_data = (byte_t*)malloc(CN_BUFFER_SIZE);
 
-	char c;
 	int data_idx = 0;
-	while(_file >> std::noskipws >> c) {
-		 s_data[data_idx++] = c;
+	while(_file >> std::noskipws >> s_data[data_idx++]) {
 		 if(data_idx == CN_BUFFER_SIZE) {
 			 serializer s_body = serializer(CN_BUFFER_SIZE);
 			 s_body.add_data(s_data,CN_BUFFER_SIZE);
 			 written += this->send(&s_body);
-//			 memset(data,CN_BUFFER_SIZE,'\0');
 			 data_idx = 0;
 		 }
 	}
+
+	//Send the last chunk (< CN_BUFFER_SIZE)
 	serializer s_last = serializer(CN_BUFFER_SIZE);
 	s_last.add_data(s_data,data_idx);
 	written += this->send(&s_last);
+
 	free(s_data);
 	_file.close();
 
@@ -391,12 +398,11 @@ bool CN::Connection::stream_file(std::string path, std::string filename) {
 }
 
 size_t CN::Connection::package_and_send(DataType type, std::string data) {
-	serializer s = serializer(CN_BUFFER_SIZE);
-	s.add_int((int)type);
-	s.add_int(data.size());
-	s.add_str_auto(data);
 
-	size_t written = this->send(&s);
+	PackedMessage m = PackedMessage(type,data.size());
+	m.s.add_str_auto(data);
+
+	size_t written = this->send(&m);
 
 	return written;
 }
@@ -404,24 +410,21 @@ size_t CN::Connection::package_and_send(DataType type, std::string data) {
 size_t CN::Connection::send_file_with_name(std::string path,std::string filename) {
 	byte_t *file_;
 	size_t len = CNetLib::import_file(path,file_);
-	serializer s = serializer(len);
 
-	s.add_int((int)DataType::FILE);
-	s.add_int(len);
-	s.add_str(filename);
-	s.add_data(file_,len);
+	PackedMessage m = PackedMessage(DataType::FILE,len);
+	m.s.add_str(filename);
+	m.s.add_data(file_,len);
 
-	size_t written = this->send(&s);
+	size_t written = this->send(&m);
 	return written;
 }
 
-size_t CN::Connection::package_and_send(int type, std::string data) {
-	serializer s = serializer(CN_BUFFER_SIZE);
-	s.add_int(type);
-	s.add_int(data.size());
-	s.add_str_auto(data);
+size_t CN::Connection::package_and_send(CN_MTYPE_T type, std::string data) {
 
-	size_t written = this->send(&s);
+	PackedMessage m = PackedMessage(type,data.size());
+	m.s.add_str_auto(data);
+
+	size_t written = this->send(&m);
 
 	return written;
 }
@@ -484,7 +487,7 @@ CN::Connection* CN::NetObj::register_connection(tcp::socket *new_sock,bool is_in
 //	CNetLib::log("Sent validation query ",(nc->incoming)? " (to client)" : " (to server)");
 	nc->start_handler();
 	if(nc->remote_validation->wait(this->timeout)) {
-		CNetLib::log(nc->getname()," remote failed to validate in time (",this->timeout,"ms)");
+		if(nc and nc->active) CNetLib::log(nc->getname(),": Terminating, failed validation timeout (",this->timeout,"ms)");
 		this->graceful_disconnect(nc); //Close and unregister
 		return nullptr;
 	} else {
@@ -521,9 +524,9 @@ std::string CN::NetObj::make_validation_hash(std::string input) {
 
 	//Constants
 	const byte_t c1 = 0x8aU+CN_PROTOCOL_VERS;
-	const byte_t c2 = 0x2bU+CN_PROTOCOL_VERS;
-	const byte_t c3 = 0xa7U+CN_PROTOCOL_VERS;
-	const byte_t c4 = 0xF3U+CN_PROTOCOL_VERS;
+	const byte_t c2 = 0x2bU+sizeof(CN_MTYPE_T);
+	const byte_t c3 = 0xa7U+sizeof(CN_MSIZE_T);
+	const byte_t c4 = 0xF3U+CN_HEADER_SIZE();
 
 	const unsigned short affix = input[input.size()/2];
 

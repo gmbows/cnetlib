@@ -1,5 +1,6 @@
 #pragma once
 
+#include "upnpcommands.h"
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -12,13 +13,18 @@
 
 #include <memory>
 #include <queue>
+
+#include <miniupnpc/miniupnpc.h>
+
 extern std::mutex print_mutex;
 
-//=========
-// GLOBAL
-//=========
+
 
 namespace CNetLib {
+
+	//=========
+	// GLOBAL
+	//=========
 
 	std::string get_address(asio::ip::tcp::socket *sock);
 	extern std::function<void(std::string)> log_handler;
@@ -116,7 +122,7 @@ namespace CNetLib {
 		void await() {
 			while(this->override == false and *this->ready == false) {
 				{
-					std::unique_lock lk(this->m);
+					std::unique_lock<std::mutex> lk(this->m);
 					this->cv.wait(lk);
 				}
 			}
@@ -149,6 +155,13 @@ namespace CNetLib {
 			this->ready = _ready;
 		}
 	};
+
+	//=========
+	// UPnP
+	//=========
+
+	void create_upnp_mapping(unsigned short port);
+	void list_upnp_mappings();
 
 	//=========
 	// VECTOR
