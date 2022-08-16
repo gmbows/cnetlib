@@ -5,10 +5,7 @@ int main() {
 	CN::Server serv = CN::Server(5555);
 	serv.start_listener();
 	
-	// CN::Client cli = CN::Client(5555);
-	
-	// CN::Connection *new_connection = cli.connect("127.0.0.1");
-	// new_connection->package_and_send("Hello from client");
+	CN::Channel *chan = serv.register_channel(nullptr,"test");//Channel ID must be 4 chars
 	
 	std::string s;
 	std::cin >> s;
