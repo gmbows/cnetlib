@@ -1,5 +1,6 @@
 #pragma once
 
+#include <miniupnpc/upnpcommands.h>
 #include <iostream>
 #include <sstream>
 #include <string>
