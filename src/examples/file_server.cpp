@@ -9,8 +9,6 @@ int main() {
 		CNetLib::export_file("./received/"+msg->f_name,msg->content.data(),msg->size);
 	});
 	
-	CN::Channel *chan = serv.register_channel(nullptr,"test");//Channel ID must be 4 chars
-	
 	serv.start_listener();
 	
 	std::string s;
