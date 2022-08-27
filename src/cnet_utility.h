@@ -26,6 +26,7 @@ namespace CNetLib {
 	// GLOBAL
 	//=========
 
+	int wrap(int,int,int);
 	std::string get_address(asio::ip::tcp::socket *sock);
 	extern std::function<void(std::string)> log_handler;
 	void init();
@@ -90,9 +91,9 @@ namespace CNetLib {
 			std::lock_guard<std::mutex> m{print_mutex};
 			log_statement << t;
 			log_handler(log_statement.str());
+			log_statement.str("");
 		}
 		print(log_statement.str());
-		log_statement.str("");
 	}
 
 	template <class T,class... Args>
@@ -112,6 +113,9 @@ namespace CNetLib {
 	std::string fmt_bytes(unsigned char *bytes,size_t len);
 	std::string random_hex_string(int);
 	std::string as_hex(int);
+	std::string as_hex(std::string);
+	char hex_decode_char(std::string);
+	std::string hex_decode_2b(std::string);
 
 	//Wait on a variable
 	struct Waiter {

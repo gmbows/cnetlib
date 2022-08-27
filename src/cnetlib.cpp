@@ -23,6 +23,7 @@ ChannelHandler default_channel_handler = [](Channel *chan) {
 };
 
 void init() {
+	CNetLib::make_directory("received");
 	if(VC_RESP_LEN*4 >= sizeof(size_t)*8) {
 		CNetLib::log("Validation response length too large");
 	}
@@ -46,6 +47,7 @@ CN::Connection::Connection(tcp::socket *new_sock,ConnectionType type): sock(new_
 	this->address = CNetLib::get_address(new_sock);
 	this->cur_msg = new CN::UserMessage(this);
 	this->id = ++num_connections;
+	this->uid = CNetLib::random_hex_string(8);
 	this->remote_validation = new CNetLib::Waiter(&this->validated);
 }
 
@@ -87,6 +89,14 @@ CN::Connection* CN::Client::connect(std::string address) {
 	return this->register_connection(std::move(new_sock));
 }
 
+void CN::Client::connect_async(std::string address, std::function<void (CN::Connection*)> callback) {
+	auto routine = [=]() {
+		CN::Connection *nc = this->connect(address);
+		callback(nc);
+	};
+	std::thread(routine).detach();
+}
+
 CN::Channel *CN::Client::create_channel(std::string address) {
 	CN::Connection *nc = this->connect(address);
 	if(!nc) return nullptr;
@@ -126,23 +136,21 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 	this->s_importer.set_data(data);
 	CN_MSIZE_T info_len = 0;
 	CN_MSIZE_T data_len = 0;
+	//Copy packet to other channel participants
+	CN::Channel *parent = this->parent_channel;
+	bool hosting = (this->parent_channel != nullptr);
+	if(hosting) {
+		for(auto &c : parent->participants) {
+			if(!c or c == this) continue;
+//			CNetLib::log("Routing ",len," bytes to ",c->getname());
+			c->send(&this->s_importer,len);
+		}
+	}
 	if(this->reading == false) {
 
 		if(len < CN_HEADER_SIZE()) {
 			CNetLib::log(this->getname(),": Terminating, malformed message");
 			return this->graceful_disconnect();
-		}
-
-		//Copy packet to other channel participants
-		CN::Channel *parent = this->parent_channel;
-		bool hosting = (this->parent_channel != nullptr);
-		if(hosting) {
-			for(auto &c : parent->participants) {
-				if(!c) continue;
-				if(c == this) continue;
-				CNetLib::log("Routing ",len," bytes to ",c->getname());
-				c->send(&this->s_importer,len);
-			}
 		}
 
 		//Unpack basic header data (type,length)
@@ -240,7 +248,6 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 				for(auto &k : CN::channel_map) {
 					uid_list += k.first;
 				}
-				CNetLib::log("Sending channel listing");
 				this->package_and_send(CN::DataType::CHAN_LIST,uid_list); //Create a new channel with base connection this
 				return this->reinit_or_reset_transfer(info_len,data,len);
 			}
@@ -271,11 +278,11 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 //				return this->reset_transfer();
 				break;
 		}
-		if(data_len) this->reading = true;
+		this->reading = true;
 	}
 	if(this->reading) {
 
-		if(len == 0) return;
+//		if(len == 0) return;
 
 		//Determine whether to retrieve a full chunk or only the
 		// remaining data in this transfer
@@ -585,7 +592,15 @@ void CN::NetObj::remove_connection(Connection *cn) {
 		}
 	}
 	this->connections.erase(this->connections.begin()+t_index);
-//	delete cn;
+	//	delete cn;
+}
+
+void CN::NetObj::remove_channel(std::string uid) {
+	if(!CNetLib::contains(CN::channel_map,uid)) return;
+	CN::Channel *cn = CN::channel_map[uid];
+	CN::channel_map.erase(uid);
+
+	delete cn;
 }
 
 void CN::NetObj::graceful_disconnect(Connection *c) {

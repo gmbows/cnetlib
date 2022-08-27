@@ -1,4 +1,4 @@
-#include "cnetlib.h"
+#include "../cnetlib.h"
 
 int main() {
 	

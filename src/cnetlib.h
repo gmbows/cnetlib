@@ -171,6 +171,7 @@ struct Connection {
 	asio::io_context m_context;
 
 	int id;
+	std::string uid;
 	bool incoming;
 
 	bool validated;			//Has this connection received a valid packet yet
@@ -305,6 +306,12 @@ struct Channel {
 		}
 	}
 
+	void distribute_async(std::function<void(Connection*)> fn) {
+		for(auto &c : this->participants) {
+			if(c) std::thread(fn,c).detach();
+		}
+	}
+
 	Channel() {
 
 	}
@@ -330,7 +337,6 @@ struct NetObj {
 	//Basic info
 	unsigned short port;
 	bool active;
-
 
 	//Handlers
 	MessageHandler msg_handler;
@@ -402,13 +408,14 @@ struct NetObj {
 	CN::Connection* register_connection(tcp::socket*,bool is_incoming = false);
 
 	//Validation
-	unsigned timeout = 2000; //2000 ms validation timeout
+	unsigned timeout = 3500; //2000 ms validation timeout
 	std::map<int,std::string> validation_challenges;
 	inline std::string generate_validation_challenge() {return CNetLib::random_hex_string(VC_QUERY_LEN);}
 
 	//Closing
 	void graceful_disconnect(CN::Connection *c);
 	void remove_connection(CN::Connection*);
+	void remove_channel(std::string);
 
 	std::string make_validation_hash(std::string input);
 
@@ -433,6 +440,7 @@ struct NetObj {
 struct Client : public NetObj {
 	tcp::resolver *resolver;
 	CN::Connection *connect(std::string);
+	void connect_async(std::string,std::function<void(CN::Connection*)>);
 
 	CN::Channel* create_channel(std::string);
 

@@ -1,4 +1,5 @@
 #include "cnet_utility.h"
+#include "cnetlib.h"
 
 #include <cmath>
 #include <string>
@@ -132,7 +133,9 @@ namespace CNetLib {
 
 	bool file_exists(std::string filename) {
 		std::ifstream image(filename,std::ios::binary);
-		return image.is_open();
+		bool suc = image.is_open();
+		image.close();
+		return suc;
 	}
 
 	std::vector<std::string> getlines(std::vector<char> data) {
@@ -165,22 +168,31 @@ namespace CNetLib {
 
 	std::string simple_encrypt(std::string s) {
 		std::string enc;
-		for(char c : s) {
-			enc += (c - s.size()-15);
+		for(int i=0;i<s.size();i++) {
+			byte_t c = s[i];
+			byte_t t = (c + s.size() + 8*i);
+			enc += t;
 		}
-		return enc;
+		return "r"+as_hex(enc);
 	}
 
 	std::string simple_decrypt(std::string s) {
 		std::string dec;
-		for(char c : s) {
-			dec += (c + s.size()+15);
+		s = hex_decode_2b(s);
+		s.erase(0);
+		for(int i=0;i<s.size();i++) {
+			byte_t c = s[i];
+			byte_t t =(c - s.size() - 8*i);
+			dec += t;
 		}
 		return dec;
 	}
 
 	bool make_directory(std::string relpath) {
 		std::error_code ec;
+		if(file_exists(relpath)) {
+			return true;
+		}
 		bool success = std::filesystem::create_directory(relpath.c_str(),ec);
 		if(!success) CNetLib::log("Error creating directory: '",relpath,"'");
 		return success;
@@ -306,6 +318,47 @@ namespace CNetLib {
 
 	void list_upnp_mappings() {
 		// list all port mappings
+	}
+
+	int wrap(int n, int lb,int ub) {
+		return lb + (n - lb) % (ub - lb);
+	}
+
+	std::string as_hex(std::string s) {
+		std::stringstream out;
+		for(auto c : s) {
+			out << std::hex << (int)c;
+		}
+		return out.str();
+	}
+
+	char hex_decode_char(std::string s)	{
+		int val = 0;
+		int col = 1;
+		for(byte_t c : s) {
+			if(c >= 'a') {
+				val += (pow(16,col))*(c-'a'+10);
+			} else {
+				val += (pow(16,col))*(c-48);
+			}
+			col--;
+		}
+		return val;
+	}
+
+	std::string hex_decode_2b(std::string h) {
+		if(h.size()%2) {
+//			CNetLib::log("Hex decode error: String is not even len");
+			h = "0"+h;
+		}
+		std::string d;
+		for(int i=0;i<h.size();i+=2) {
+			std::string pair;
+			pair += h[i];
+			pair += h[i+1];
+			d += hex_decode_char(pair);
+		}
+		return d;
 	}
 
 }
