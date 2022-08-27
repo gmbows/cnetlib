@@ -12,7 +12,10 @@ CNetLib is a high-level, multithreaded networking library for handling TCP messa
 * UPnP (optional)
 * Hashed validation
 
-## Usage Example
+## Usage Examples
+
+### Chatroom
+<hr>
 
 A simple chatroom can be created with the following snippets. <br>
 Messages sent by any client will be synchronized between participants.
@@ -66,6 +69,30 @@ serv.start_listener(); //Start accepting connections
 //Enter to close...
 std::string s;
 std::cin >> s;
+```
+
+### File Transmission
+<hr>
+See above for Server/Client initialization
+
+### Server
+```cpp
+//Create directory for received files
+CNetLib::make_directory("received");
+
+//Add file type handler
+//Write file to ./received/{filename}
+serv.add_typespec_handler(CN::DataType::FILE,[](CN::UserMessage *msg) {
+	CNetLib::log("(File) Got ",msg->f_name," (",CNetLib::conv_bytes(msg->size));
+	CNetLib::export_file("./received/"+msg->f_name,msg->content.data(),msg->size);
+});
+```
+
+### Client
+
+```cpp
+//Send file at path "./data.txt" with filename "data.txt"
+new_connection->send_file_with_name("./data.txt","data.txt");
 ```
 
 ## Linking
