@@ -1,4 +1,4 @@
-#include "cnetlib.h"
+#include <cnetlib.h>
 
 #include "serializer.h"
 
@@ -86,7 +86,10 @@ CN::Connection* CN::Client::connect(std::string address) {
 	}
 
 //	CNetLib::print("Connection successful");
-	return this->register_connection(std::move(new_sock));
+	if(this->secure)
+		return this->register_connection(std::move(new_sock));
+	else
+		return this->register_connection(std::move(new_sock),false,true);
 }
 
 void CN::Client::connect_async(std::string address, std::function<void (CN::Connection*)> callback) {
@@ -107,6 +110,16 @@ CN::Channel *CN::Client::create_channel(std::string address) {
 
 //Connection
 
+std::string CN::Connection::getname() {
+	return	CNetLib::as_hex(this->id) + "." +
+			std::to_string(this->owner->secure) +
+			std::to_string(this->active) +
+			std::to_string(this->validated) +
+			std::to_string(this->remote_validated) +
+			std::to_string(this->reading) +
+			(this->incoming ? ".inc" : ".out") + ".con";
+}
+
 //Data processing
 
 void CN::Connection::handle() {
@@ -116,10 +129,10 @@ void CN::Connection::handle() {
 	while(!ec and this->active) {
 		try {
 			len = this->sock->read_some(asio::buffer(read_buf,CN_BUFFER_SIZE),ec);
-//			len = asio::read(*this->sock,asio::buffer(read_buf,CN_BUFFER_SIZE));
-//			CNetLib::log("Connection ",this->id," got ",len," bytes");
+			CNetLib::log("Connection ",this->id," got ",len," bytes");
 			if(this->active and !ec) {
-				if(this->type != CN::ConnectionType::WRITEONLY) this->process_data(read_buf,len);
+				if(this->type != CN::ConnectionType::WRITEONLY)
+					this->process_data(read_buf,len);
 			}
 		} catch(const std::exception &e) {
 			CNetLib::log(this->getname(),": Network I/O error: ",e.what());
@@ -132,10 +145,19 @@ void CN::Connection::handle() {
 }
 
 void CN::Connection::process_data(byte_t *data, size_t len) {
-//	CNetLib::log("Got ",len," bytes");
+	if(this->owner->ptc == Protocol::CNETLIB) {
+		this->process_data_cnetlib(data,len);
+	} else {
+		this->process_data_http(data,len);
+	}
+}
+
+void CN::Connection::process_data_cnetlib(byte_t *data, size_t len) {
+	//	CNetLib::log("Got ",len," bytes");
 	this->s_importer.set_data(data);
 	CN_MSIZE_T info_len = 0;
 	CN_MSIZE_T data_len = 0;
+
 	//Copy packet to other channel participants
 	CN::Channel *parent = this->parent_channel;
 	bool hosting = (this->parent_channel != nullptr);
@@ -146,6 +168,7 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 			c->send(&this->s_importer,len);
 		}
 	}
+
 	if(this->reading == false) {
 
 		if(len < CN_HEADER_SIZE()) {
@@ -161,6 +184,10 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 //		CNetLib::log("Got message of type ",(int)n_type," along with ",info_len," info bytes and ",data_len," data bytes");
 		//Ignore some messages depending on
 		// the current state of the connection
+//		bool proceed = true;
+//		CNetLib::log("Processing insecure data");
+		std::string s((const char*)data);
+		CNetLib::log(s);
 		bool proceed = this->precheck_message_type(n_type);
 		if(!proceed) {
 			CNetLib::log(this->getname(),": Terminating, suspicious activity");
@@ -317,6 +344,12 @@ void CN::Connection::process_data(byte_t *data, size_t len) {
 	}
 }
 
+void CN::Connection::process_data_http(byte_t *data, size_t len) {
+	CNetLib::log("Processing insecure data");
+	std::string s1((const char*)data);
+	CNetLib::log(s1);
+}
+
 void CN::Connection::reinit_or_reset_transfer(size_t info_len,byte_t *data, size_t packet_len) {
 	size_t bytes_read = this->s_importer.data_get_ptr - this->s_importer.data - CN_HEADER_SIZE();
 	if(info_len and bytes_read != info_len) {
@@ -355,6 +388,7 @@ void CN::Connection::check_validation_response(std::string actual_response) {
 }
 
 //Data transmission
+
 
 size_t CN::Connection::send(serializer *s) {
 	size_t written;
@@ -551,31 +585,41 @@ CN::Channel *CN::NetObj::register_channel(Connection *nc, std::string id) {
 	return new_channel;
 }
 
-CN::Connection* CN::NetObj::register_connection(tcp::socket *new_sock,bool is_incoming) {
+CN::Connection* CN::NetObj::register_connection(tcp::socket *new_sock,bool is_incoming, bool is_insecure) {
 	//Registers a connection to this tcp socket
 	CN::Connection *nc = new CN::Connection(new_sock);
 	nc->owner = this;
 	nc->active = true;
 	nc->incoming = is_incoming;	//Indicate if connection is outgoing or incoming
+	nc->secure = !is_insecure;
 
 	this->connections.push_back(nc);
 	CNetLib::log(nc->getname(),": Registered");
 
 	//Create validation challenge
 //	CNetLib::log("Creating new validation challenge");
-	std::string new_challenge = this->generate_validation_challenge();
-	std::string new_hash = this->make_validation_hash(new_challenge);
-	this->validation_challenges.insert({nc->id,new_hash});
-	//Wait for remote validation
-	nc->send_info(DataType::VC_QUERY,new_challenge);
-//	CNetLib::log("Sent validation query ",(nc->incoming)? " (to client)" : " (to server)");
 	nc->start_handler();
-	if(nc->remote_validation->wait(this->timeout)) {
-		if(nc and nc->active) CNetLib::log(nc->getname(),": Terminating, failed validation timeout (",this->timeout,"ms)");
-		this->graceful_disconnect(nc); //Close and unregister
-		return nullptr;
+	if(nc->secure == true) {
+		std::string new_challenge = this->generate_validation_challenge();
+		std::string new_hash = this->make_validation_hash(new_challenge);
+		this->validation_challenges.insert({nc->id,new_hash});
+		//Wait for remote validation
+		nc->send_info(DataType::VC_QUERY,new_challenge);
+	//	CNetLib::log("Sent validation query ",(nc->incoming)? " (to client)" : " (to server)");
+		if(nc->remote_validation->wait(this->timeout)) {
+			if(nc and nc->active) CNetLib::log(nc->getname(),": Terminating, failed validation timeout (",this->timeout,"ms)");
+			this->graceful_disconnect(nc); //Close and unregister
+			return nullptr;
+		} else {
+			//Only expose valid connections to user callbacks
+			this->call_connection_handler(nc);
+		}
 	} else {
-		//Only expose valid connections to user callbacks
+		//Skip validation
+//		nc->start_handler();
+		CNetLib::log("Registered insecure connection");
+		nc->validated = true;
+		nc->remote_validated = true;
 		this->call_connection_handler(nc);
 	}
 	return nc;

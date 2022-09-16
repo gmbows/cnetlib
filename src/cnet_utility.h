@@ -91,9 +91,9 @@ namespace CNetLib {
 			std::lock_guard<std::mutex> m{print_mutex};
 			log_statement << t;
 			log_handler(log_statement.str());
-			log_statement.str("");
 		}
 		print(log_statement.str());
+		log_statement.str("");
 	}
 
 	template <class T,class... Args>

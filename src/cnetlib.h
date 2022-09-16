@@ -56,7 +56,7 @@ enum class DataType: CN_MTYPE_T {
 	FILE,
 	JSON,
 
-	//Close connection
+	//Request connection close
 	CLOSE,
 
 	//Validation challenge
@@ -73,9 +73,6 @@ enum class DataType: CN_MTYPE_T {
 
 	//Streaming
 	STREAM_INIT,
-	//Between these two packets, all incoming packets will be streamed
-	// directly to the file initialized in the STREAM_INIT message
-	STREAM_TERM,
 };
 
 enum class ConnectionType {
@@ -84,6 +81,10 @@ enum class ConnectionType {
 	READONLY,
 };
 
+enum class Protocol {
+	CNETLIB,
+	HTTP,
+};
 
 void init();
 
@@ -174,6 +175,7 @@ struct Connection {
 	std::string uid;
 	bool incoming;
 
+	bool secure;			//Does this connection use/expect validation and use cnetlib protocol
 	bool validated;			//Has this connection received a valid packet yet
 	bool remote_validated;	//Has the remote host validated this connection
 	bool active;	//Is this connection active
@@ -181,14 +183,7 @@ struct Connection {
 
 	ConnectionType type;
 
-	std::string getname() {
-		return	CNetLib::as_hex(this->id) + "." +
-				std::to_string(this->active) +
-				std::to_string(this->validated) +
-				std::to_string(this->remote_validated) +
-				std::to_string(this->reading) +
-				(this->incoming ? ".inc" : ".out") + ".con";
-	}
+	std::string getname();
 
 	CNetLib::Waiter *remote_validation;
 
@@ -238,7 +233,11 @@ struct Connection {
 	void check_validation_response(std::string);
 
 	void handle();
-	void process_data(byte_t*,size_t);
+
+	void process_data(byte_t *data,size_t len);		//Determine appropriate protocol
+	void process_data_cnetlib(byte_t*,size_t);		//Process data from another cnetlib client
+	void process_data_http(byte_t*,size_t);			//Process http data
+
 	void dispatch_msg();
 	void peek_msg(); //Call message handler on an incomplete message
 	void reinit_or_reset_transfer(size_t,byte_t*,size_t);
@@ -338,6 +337,9 @@ struct NetObj {
 	unsigned short port;
 	bool active;
 
+	bool secure = true; //Does this object expect validation AND use cnetlib protocol
+	Protocol ptc = Protocol::CNETLIB;
+
 	//Handlers
 	MessageHandler msg_handler;
 	ConnectionHandler connection_handler;
@@ -405,7 +407,7 @@ struct NetObj {
 
 	//Connections
 	std::vector<CN::Connection*> connections;
-	CN::Connection* register_connection(tcp::socket*,bool is_incoming = false);
+	CN::Connection* register_connection(tcp::socket*,bool is_incoming = false, bool is_insecure = false);
 
 	//Validation
 	unsigned timeout = 3500; //2000 ms validation timeout
@@ -451,6 +453,18 @@ struct Client : public NetObj {
 	~Client() {
 		delete resolver;
 		CNetLib::log("Destroying client");
+	}
+};
+
+struct HTTPClient : public Client {
+
+	HTTPClient(): Client(80) {
+		this->secure = false;
+		this->ptc = Protocol::HTTP;
+	}
+
+	~HTTPClient() {
+		CNetLib::log("Destroying http client");
 	}
 };
 
