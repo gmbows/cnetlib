@@ -18,7 +18,30 @@ CNetLib is a high-level, multithreaded networking library for handling TCP messa
 <hr>
 
 A simple chatroom can be created with the following snippets. <br>
-Messages sent by any client will be synchronized between participants.
+Messages sent by any client will be routed through the host server to all channel participants.
+
+### Server
+```cpp
+#include "cnetlib.h"
+//main_server.cpp
+
+
+CN::Server serv = CN::Server(5555); //Create server object on port 5555
+
+//Set handler for TEXT messages (otherwise call default)
+serv.add_typespec_handler(CN::DataType::TEXT,[](CN::UserMessage *msg) { 
+	CNetLib::log("(Message) ",msg->connection->getname(),": ",msg->str());
+});
+
+//Create new channel with id "test" (must be 4 chars)
+CN::Channel *chan = serv.register_channel(nullptr,"test");
+
+serv.start_listener(); //Start accepting connections
+
+//Enter to close...
+std::string s;
+std::cin >> s;
+```
 
 ### Client
 ```cpp
@@ -46,29 +69,6 @@ while(s != "q") {
 	std::getline(std::cin,s);
 	new_connection->package_and_send(s);
 }
-```
-
-### Server
-```cpp
-#include "cnetlib.h"
-//main_server.cpp
-
-
-CN::Server serv = CN::Server(5555); //Create server object on port 5555
-
-//Set handler for TEXT messages (otherwise call default)
-serv.add_typespec_handler(CN::DataType::TEXT,[](CN::UserMessage *msg) { 
-	CNetLib::log("(Message) ",msg->connection->getname(),": ",msg->str());
-});
-
-//Create new channel with id "test" (must be 4 chars)
-CN::Channel *chan = serv.register_channel(nullptr,"test");
-
-serv.start_listener(); //Start accepting connections
-
-//Enter to close...
-std::string s;
-std::cin >> s;
 ```
 
 ### File Transmission
