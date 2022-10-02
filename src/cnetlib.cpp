@@ -1,4 +1,4 @@
-#include <cnetlib.h>
+#include "cnetlib.h"
 
 #include "serializer.h"
 
@@ -37,6 +37,25 @@ std::map<std::string,Channel*> channel_map;
 Channel *get_channel(std::string _uid) {
 	if(!CNetLib::contains(channel_map,_uid)) return nullptr;
 	return channel_map[_uid];
+}
+
+std::vector<std::string> UserMessage::try_get_array() {
+	std::vector<std::string> data;
+//	char* c = (char*)malloc(this->array_element_size);
+//	for(int i=0;i<this->array_size;i++) {
+//		memcpy(c,this->content.data()+(i*this->array_element_size),this->array_element_size);
+//		data.push_back(std::move(c));
+//	}
+//	free(c);
+	std::string temp;
+	for(int i=0;i<this->array_size*this->array_element_size;i+=this->array_element_size) {
+		for(int j=0;j<this->array_element_size;j++) {
+			temp += this->content[i+j];
+		}
+		data.push_back(temp);
+		temp = "";
+	}
+	return data;
 }
 
 }
@@ -186,8 +205,8 @@ void CN::Connection::process_data_cnetlib(byte_t *data, size_t len) {
 		// the current state of the connection
 //		bool proceed = true;
 //		CNetLib::log("Processing insecure data");
-		std::string s((const char*)data);
-		CNetLib::log(s);
+//		std::string s((const char*)data);
+//		CNetLib::log(s);
 		bool proceed = this->precheck_message_type(n_type);
 		if(!proceed) {
 			CNetLib::log(this->getname(),": Terminating, suspicious activity");
@@ -227,6 +246,12 @@ void CN::Connection::process_data_cnetlib(byte_t *data, size_t len) {
 			}
 			case CN::DataType::CLOSE:
 				return this->graceful_disconnect(); //Deletes this object
+			case CN::DataType::ARRAY: {
+				this->cur_msg->array_element_size = s_importer.get_int();
+				this->cur_msg->array_size = data_len/this->cur_msg->array_element_size;
+				CNetLib::print("Got array with base string length ",this->cur_msg->array_element_size," and size ",this->cur_msg->array_size);
+				break;
+			}
 			case CN::DataType::FILE: {
 				std::string filename = s_importer.get_str();
 				this->cur_msg->f_name = filename;
@@ -540,6 +565,26 @@ size_t CN::Connection::package_and_send(CN_MTYPE_T type, std::string data) {
 
 	PackedMessage m = PackedMessage(type,0ull,data.size());
 	m.s.add_str_auto(data);
+
+	size_t written = this->send(&m);
+
+	return written;
+}
+
+size_t CN::Connection::send_array(std::vector<std::string> data) {
+
+	size_t longest = 0;
+	for(auto &s : data) {
+		if(s.size() > longest) longest = s.size();
+	}
+
+//	for(int i=0;i<data.size();i++) {
+//		while(data[i].size() != longest) data[i] = data[i] + '\0';
+//	}
+
+	PackedMessage m = PackedMessage(CN::DataType::ARRAY,sizeof(int),data.size()*longest);
+	m.s.add_int(longest);
+	for(auto &s : data) m.s.add_str(s,longest);
 
 	size_t written = this->send(&m);
 

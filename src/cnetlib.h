@@ -53,6 +53,7 @@ enum class DataType: CN_MTYPE_T {
 
 	//Basic data types
 	TEXT,
+	ARRAY,
 	FILE,
 	JSON,
 
@@ -99,6 +100,8 @@ struct UserMessage {
 
 	bool complete;
 	std::string f_name;
+	int array_element_size = 0;
+	int array_size = 0;
 
 	std::vector<byte_t> content;
 	CN::Connection *connection;
@@ -109,6 +112,8 @@ struct UserMessage {
 	std::string str() {
 		return CNetLib::fmt_bytes(this->content.data(),this->size);
 	}
+
+	std::vector<std::string> try_get_array();
 
 	bool import_data(byte_t *data,size_t len) {
 //		CNetLib::log("Importing ",len," bytes");
@@ -157,7 +162,7 @@ struct PackedMessage {
 	serializer s = serializer(1024);
 	PackedMessage(DataType type,CN_MSIZE_T info_len = 0ull,CN_MSIZE_T data_len = 0ull) {
 		this->s.add_auto((CN_MTYPE_T)type);
-		this->s.add_auto(info_len);	//Length of control info (e.g. filenames)
+		this->s.add_auto(info_len);	//Length of control info (e.g. filenames, anything that should be unpacked before reading any data)
 		this->s.add_auto(data_len);
 	}
 	PackedMessage(CN_MTYPE_T type,CN_MSIZE_T info_len = 0ull,CN_MSIZE_T data_len = 0ull) {
@@ -205,6 +210,7 @@ struct Connection {
 	size_t send_info(DataType);			//Sends packet with 0-length body
 	size_t send_info(DataType,std::string);	//Sends packet with control header
 	size_t package_and_send(CN_MTYPE_T,std::string);
+	size_t send_array(std::vector<std::string>);
 	size_t package_and_send(DataType,std::string);
 	size_t package_and_send(CN_MTYPE_T,byte_t*,CN_MSIZE_T);
 	size_t package_and_send(DataType,byte_t*,CN_MSIZE_T);
