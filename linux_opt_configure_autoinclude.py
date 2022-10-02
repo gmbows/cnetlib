@@ -46,7 +46,7 @@ makestr = ""
 
 binlist = ["bin"+src[src.rfind('/'):]+".o" for src in srcs]
 
-libs = "-std=c++17 -lstdc++fs -DASIO_STANDALONE  -D_REENTRANT"
+libs = "-std=c++17 -lstdc++fs -DASIO_STANDALONE  -D_REENTRANT -lminiupnpc -lpthread"
 
 makestr += execname+": "+" ".join(binlist)+"\n\tg++  "+" ".join(binlist)+" "+libs+"  -fpermissive -O3 -o "+execname+"\n\n"
 

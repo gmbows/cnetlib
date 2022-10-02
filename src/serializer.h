@@ -221,6 +221,16 @@ public:
 		}
 	}
 
+	void add_str(std::string s,size_t len) {
+		for(int i=0;i<len;i++) {
+			if(i < s.size()) {
+				this->add_char(s[i]);
+			} else {
+				this->add_char('\0');
+			}
+		}
+	}
+
 	void add_data(unsigned char* data, size_t len) {
 		for(int i=0;i<len;i++) {
 			this->add_char(data[i]);
