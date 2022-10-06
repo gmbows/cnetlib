@@ -12,9 +12,16 @@ CNetLib is a high-level, multithreaded networking library for handling TCP messa
 * UPnP (optional)
 * Hashed validation
 
+## Architecture
+Each new connection spawns a server thread that reads data, and passes complete messages to user-defined handling functions (subject to change). <br>
+Uses a 64k network buffer by default. <br>
+Message type is stored in a 32-bit integer in the header of each message, after the size of the message, which is a 64-bit integer.
+Users can define their own message type handlers by passing the 32-bit message type id to `NetObj::add_typespec_handler(id,[](){});`<br>
+Messages of type `id` will be passed to the callable in the second parameter.
 ## Usage Examples
 
-### Chatroom
+### Example 1: Chatroom
+
 <hr>
 
 A simple chatroom can be created with the following snippets. <br>
@@ -71,7 +78,7 @@ while(s != "q") {
 }
 ```
 
-### File Transmission
+### Example 2: File Transmission
 <hr>
 See above for Server/Client initialization
 
